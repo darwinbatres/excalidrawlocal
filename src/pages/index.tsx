@@ -55,6 +55,11 @@ export default function HomePage() {
   const [newBoardDescription, setNewBoardDescription] = useState("");
   const [creating, setCreating] = useState(false);
 
+  // Delete board confirmation modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [boardToDelete, setBoardToDelete] = useState<Board | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   // Load boards from API
   const loadBoards = useCallback(async () => {
     if (!currentOrg) return;
@@ -178,23 +183,28 @@ export default function HomePage() {
     }
   };
 
-  // Delete board
-  const handleDeleteBoard = async (boardId: string) => {
-    if (
-      !confirm(
-        "Are you sure you want to delete this board? This cannot be undone."
-      )
-    ) {
-      return;
-    }
+  // Delete board - open confirmation modal
+  const openDeleteModal = (board: Board) => {
+    setBoardToDelete(board);
+    setShowDeleteModal(true);
+  };
 
+  // Delete board - confirm and execute
+  const handleDeleteBoard = async () => {
+    if (!boardToDelete) return;
+
+    setDeleting(true);
     try {
-      await boardApi.delete(boardId);
+      await boardApi.delete(boardToDelete.id);
+      setShowDeleteModal(false);
+      setBoardToDelete(null);
       await loadBoards();
       await loadWorkspaceStorage();
     } catch (err) {
       console.error("Failed to delete board:", err);
       alert(err instanceof ApiError ? err.message : "Failed to delete board");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -392,7 +402,7 @@ export default function HomePage() {
                 storageSize={boardStorages[board.id]}
                 onClick={() => router.push(`/boards/${board.id}`)}
                 onArchive={() => handleArchiveBoard(board.id)}
-                onDelete={() => handleDeleteBoard(board.id)}
+                onDelete={() => openDeleteModal(board)}
                 onCleanup={() => handleCleanupBoard(board.id)}
               />
             ))}
@@ -467,6 +477,45 @@ export default function HomePage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete Board Confirmation Modal */}
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        title="Delete Board"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-600 dark:text-gray-400">
+            Are you sure you want to delete{" "}
+            <strong className="text-gray-900 dark:text-gray-100">
+              {boardToDelete?.title}
+            </strong>
+            ?
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-500">
+            This action cannot be undone. All board data and version history
+            will be permanently removed.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="secondary"
+              onClick={() => setShowDeleteModal(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleDeleteBoard}
+              disabled={deleting}
+              className="!bg-red-600 hover:!bg-red-700 !border-red-600"
+            >
+              {deleting ? "Deleting..." : "Delete Board"}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </Layout>
   );
