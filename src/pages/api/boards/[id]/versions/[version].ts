@@ -87,7 +87,7 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
 
         return res.status(200).json({
           message: `Board restored to version ${versionNum}`,
-          newVersion: result.version,
+          version: result.version,
           etag: result.etag,
         });
       }

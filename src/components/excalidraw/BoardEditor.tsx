@@ -24,6 +24,8 @@ import { SaveIndicator } from "./SaveIndicator";
 import { VersionHistory } from "./VersionHistory";
 import MarkdownCard from "./MarkdownCard";
 import MarkdownCardEditor from "./MarkdownCardEditor";
+import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
 
 // Dynamic import for Excalidraw (it needs to be client-side only)
 const Excalidraw = dynamic(
@@ -235,6 +237,13 @@ export function BoardEditor({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [storageSize, setStorageSize] = useState<string | null>(null);
 
+  // Restore version confirmation modal
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [versionToRestore, setVersionToRestore] = useState<BoardVersion | null>(
+    null
+  );
+  const [restoring, setRestoring] = useState(false);
+
   const excalidrawRef = useRef<ExcalidrawAPI | null>(null);
   const lastSavedEtagRef = useRef<string>("");
   const hasUnsavedChangesRef = useRef(false);
@@ -413,52 +422,61 @@ export function BoardEditor({
     saveToServer(elements, appState, files);
   }, [saveToServer]);
 
-  // Restore version via API
-  const handleRestoreVersion = useCallback(
-    async (version: BoardVersion) => {
-      if (!excalidrawRef.current || !user || !board) return;
+  // Restore version - open confirmation modal
+  const handleRestoreVersion = useCallback((version: BoardVersion) => {
+    setVersionToRestore(version);
+    setShowRestoreModal(true);
+  }, []);
 
-      try {
-        // Restore via API (this creates a new version from the old one)
-        const result = await boardApi.restoreVersion(board.id, version.version);
+  // Restore version - confirm and execute
+  const confirmRestoreVersion = useCallback(async () => {
+    if (!excalidrawRef.current || !user || !board || !versionToRestore) return;
 
-        // Get the scene data from the version
-        const sceneJson = version.sceneJson as {
-          elements?: ExcalidrawElements;
-          files?: BinaryFiles;
-        };
+    setRestoring(true);
+    try {
+      // Restore via API (this creates a new version from the old one)
+      const result = await boardApi.restoreVersion(
+        board.id,
+        versionToRestore.version
+      );
 
-        // Update the scene in Excalidraw
-        excalidrawRef.current.updateScene({
-          elements: sceneJson.elements || [],
-          appState: version.appStateJson || undefined,
-        });
+      // Get the scene data from the version
+      const sceneJson = versionToRestore.sceneJson as {
+        elements?: ExcalidrawElements;
+        files?: BinaryFiles;
+      };
 
-        // Add files if present
-        if (sceneJson.files && Object.keys(sceneJson.files).length > 0) {
-          excalidrawRef.current.addFiles(Object.values(sceneJson.files));
-        }
+      // Update the scene in Excalidraw
+      excalidrawRef.current.updateScene({
+        elements: sceneJson.elements || [],
+        appState: versionToRestore.appStateJson || undefined,
+      });
 
-        // Update etag
-        lastSavedEtagRef.current = result.etag;
-
-        setShowHistory(false);
-        setSaveStatus("saved");
-        setLastSaved(result.version.createdAt);
-
-        // Refresh storage info after restore
-        fetchStorageInfo();
-      } catch (error) {
-        console.error("Failed to restore version:", error);
-        alert(
-          error instanceof ApiError
-            ? error.message
-            : "Failed to restore version"
-        );
+      // Add files if present
+      if (sceneJson.files && Object.keys(sceneJson.files).length > 0) {
+        excalidrawRef.current.addFiles(Object.values(sceneJson.files));
       }
-    },
-    [user, board, fetchStorageInfo]
-  );
+
+      // Update etag
+      lastSavedEtagRef.current = result.etag;
+
+      setShowRestoreModal(false);
+      setVersionToRestore(null);
+      setShowHistory(false);
+      setSaveStatus("saved");
+      setLastSaved(result.version.createdAt);
+
+      // Refresh storage info after restore
+      fetchStorageInfo();
+    } catch (error) {
+      console.error("Failed to restore version:", error);
+      alert(
+        error instanceof ApiError ? error.message : "Failed to restore version"
+      );
+    } finally {
+      setRestoring(false);
+    }
+  }, [user, board, versionToRestore, fetchStorageInfo]);
 
   // Handle editing a markdown card (triggered by double-click)
   const handleEditMarkdownCard = useCallback(
@@ -907,6 +925,44 @@ export function BoardEditor({
           setEditingMarkdownContent("");
         }}
       />
+
+      {/* Restore Version Confirmation Modal */}
+      <Modal
+        isOpen={showRestoreModal}
+        onClose={() => setShowRestoreModal(false)}
+        title="Restore Version"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-600 dark:text-gray-400">
+            Are you sure you want to restore{" "}
+            <strong className="text-gray-900 dark:text-gray-100">
+              version {versionToRestore?.version}
+            </strong>
+            ?
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-500">
+            This will replace your current board content with the selected
+            version. A new version will be created with the restored content.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="secondary"
+              onClick={() => setShowRestoreModal(false)}
+              disabled={restoring}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={confirmRestoreVersion}
+              disabled={restoring}
+            >
+              {restoring ? "Restoring..." : "Restore Version"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
