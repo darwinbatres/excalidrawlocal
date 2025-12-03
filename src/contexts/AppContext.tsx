@@ -51,6 +51,7 @@ interface AppContextValue {
   logout: () => Promise<void>;
   switchOrg: (orgId: string) => void;
   createOrg: (name: string, slug: string) => Promise<OrgWithRole>;
+  renameOrg: (orgId: string, name: string) => Promise<void>;
   deleteOrg: (orgId: string) => Promise<void>;
   refreshOrgs: () => Promise<void>;
 }
@@ -182,6 +183,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [isAuthenticated, fetchOrgs]
   );
 
+  const renameOrg = useCallback(
+    async (orgId: string, name: string): Promise<void> => {
+      if (!isAuthenticated) {
+        throw new Error("Must be logged in to rename an organization");
+      }
+
+      const response = await fetch(`/api/orgs/${orgId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to rename organization");
+      }
+
+      // Refresh orgs list to get updated name
+      await fetchOrgs();
+
+      // Update currentOrg if it was the one renamed
+      if (currentOrg?.id === orgId) {
+        setCurrentOrg((prev) => (prev ? { ...prev, name } : null));
+      }
+    },
+    [isAuthenticated, fetchOrgs, currentOrg?.id]
+  );
+
   const deleteOrg = useCallback(
     async (orgId: string): Promise<void> => {
       if (!isAuthenticated) {
@@ -220,6 +249,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     logout,
     switchOrg,
     createOrg,
+    renameOrg,
     deleteOrg,
     refreshOrgs: fetchOrgs,
   };
@@ -242,6 +272,7 @@ export function useUser() {
 }
 
 export function useOrg() {
-  const { currentOrg, userOrgs, switchOrg, createOrg, deleteOrg } = useApp();
-  return { currentOrg, userOrgs, switchOrg, createOrg, deleteOrg };
+  const { currentOrg, userOrgs, switchOrg, createOrg, renameOrg, deleteOrg } =
+    useApp();
+  return { currentOrg, userOrgs, switchOrg, createOrg, renameOrg, deleteOrg };
 }

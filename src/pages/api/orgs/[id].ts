@@ -1,6 +1,7 @@
 // =============================================================================
 // Organization API - Single Organization Operations
 // =============================================================================
+// PATCH /api/orgs/[id] - Update an organization (rename)
 // DELETE /api/orgs/[id] - Delete an organization
 // =============================================================================
 
@@ -21,6 +22,52 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
 
   try {
     switch (method) {
+      case "PATCH": {
+        // Update organization (rename)
+        const { name } = req.body;
+
+        if (!name || typeof name !== "string" || !name.trim()) {
+          return res.status(400).json({
+            error: "Bad Request",
+            message: "Name is required",
+          });
+        }
+
+        // Check user is a member and has OWNER role
+        const membership = await prisma.membership.findUnique({
+          where: {
+            orgId_userId: {
+              orgId,
+              userId: req.user.id,
+            },
+          },
+        });
+
+        if (!membership) {
+          return res.status(404).json({ error: "Organization not found" });
+        }
+
+        if (membership.role !== "OWNER") {
+          return res.status(403).json({
+            error: "Forbidden",
+            message: "Only owners can rename a workspace",
+          });
+        }
+
+        // Update the organization
+        const updated = await prisma.organization.update({
+          where: { id: orgId },
+          data: { name: name.trim() },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        });
+
+        return res.status(200).json(updated);
+      }
+
       case "DELETE": {
         // 1. Check user is a member and has OWNER role
         const membership = await prisma.membership.findUnique({
@@ -51,7 +98,8 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
         if (userOrgCount <= 1) {
           return res.status(400).json({
             error: "Bad Request",
-            message: "You must have at least one workspace. Create a new workspace before deleting this one.",
+            message:
+              "You must have at least one workspace. Create a new workspace before deleting this one.",
           });
         }
 
@@ -79,7 +127,9 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
         });
 
         // 6. Log the deletion
-        console.log(`[Audit] User ${req.user.id} deleted org ${orgId} (${org?.name})`);
+        console.log(
+          `[Audit] User ${req.user.id} deleted org ${orgId} (${org?.name})`
+        );
 
         return res.status(200).json({
           success: true,
@@ -88,7 +138,7 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
       }
 
       default:
-        res.setHeader("Allow", ["DELETE"]);
+        res.setHeader("Allow", ["PATCH", "DELETE"]);
         return res.status(405).json({ error: `Method ${method} Not Allowed` });
     }
   } catch (error) {

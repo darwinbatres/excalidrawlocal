@@ -23,12 +23,18 @@ export function Header() {
     userOrgs,
     switchOrg,
     createOrg,
+    renameOrg,
     deleteOrg,
     logout,
   } = useApp();
   const [showOrgDropdown, setShowOrgDropdown] = useState(false);
   const [showNewOrgModal, setShowNewOrgModal] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [orgToRename, setOrgToRename] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [orgToDelete, setOrgToDelete] = useState<{
     id: string;
     name: string;
@@ -36,9 +42,12 @@ export function Header() {
   } | null>(null);
   const [newOrgName, setNewOrgName] = useState("");
   const [newOrgSlug, setNewOrgSlug] = useState("");
+  const [renameValue, setRenameValue] = useState("");
   const [creating, setCreating] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Don't render the header if user is not authenticated
@@ -100,6 +109,39 @@ export function Header() {
     }
   };
 
+  const openRenameModal = (org: { id: string; name: string }) => {
+    setOrgToRename(org);
+    setRenameValue(org.name);
+    setRenameError(null);
+    setShowRenameModal(true);
+    setShowOrgDropdown(false);
+  };
+
+  const handleRenameOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orgToRename || !renameValue.trim()) return;
+
+    setRenaming(true);
+    setRenameError(null);
+
+    try {
+      const newName = renameValue.trim();
+      await renameOrg(orgToRename.id, newName);
+      setOrgToRename(null);
+      setRenameValue("");
+      setShowRenameModal(false);
+      toast("Workspace renamed", {
+        description: newName,
+      });
+    } catch (err) {
+      setRenameError(
+        err instanceof Error ? err.message : "Failed to rename workspace"
+      );
+    } finally {
+      setRenaming(false);
+    }
+  };
+
   const openDeleteConfirm = (org: {
     id: string;
     name: string;
@@ -124,6 +166,11 @@ export function Header() {
     return (
       org.role === "OWNER" && (org.boardCount || 0) === 0 && userOrgs.length > 1
     );
+  };
+
+  // Can rename if user owns the org
+  const canRenameOrg = (org: { role: string }) => {
+    return org.role === "OWNER";
   };
 
   return (
@@ -200,30 +247,56 @@ export function Header() {
                           </svg>
                         )}
                       </button>
-                      {canDeleteOrg(org) && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openDeleteConfirm(org);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-all"
-                          title="Delete workspace"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
+                      <div className="flex items-center gap-0.5">
+                        {canRenameOrg(org) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openRenameModal(org);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-all"
+                            title="Rename workspace"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
-                      )}
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                              />
+                            </svg>
+                          </button>
+                        )}
+                        {canDeleteOrg(org) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDeleteConfirm(org);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-all"
+                            title="Delete workspace"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                   <div className="border-t border-gray-100 dark:border-gray-700 my-2" />
@@ -387,6 +460,53 @@ export function Header() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Rename Workspace Modal */}
+      <Modal
+        isOpen={showRenameModal}
+        onClose={() => setShowRenameModal(false)}
+        title="Rename Workspace"
+      >
+        <form onSubmit={handleRenameOrg}>
+          {renameError && (
+            <div className="mb-4 flex items-center gap-3 p-4 text-sm text-red-700 bg-red-50 dark:bg-red-900/20 dark:text-red-400 rounded-xl border border-red-100 dark:border-red-900/30">
+              <svg
+                className="w-5 h-5 shrink-0"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              {renameError}
+            </div>
+          )}
+          <Input
+            label="Workspace name"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            placeholder="My Workspace"
+            autoFocus
+            disabled={renaming}
+          />
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setShowRenameModal(false)}
+              type="button"
+              disabled={renaming}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!renameValue.trim() || renaming}>
+              {renaming ? "Renaming..." : "Rename"}
+            </Button>
+          </div>
+        </form>
       </Modal>
     </>
   );

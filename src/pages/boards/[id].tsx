@@ -91,14 +91,18 @@ export default function BoardPage() {
 
     setSaving(true);
     try {
+      const newTitle = editTitle.trim();
       const updated = await boardApi.update(board.id, {
-        title: editTitle.trim(),
+        title: newTitle,
       });
       setBoard({ ...board, ...updated });
       setIsEditing(false);
+      toast("Board renamed", {
+        description: newTitle,
+      });
     } catch (err) {
       console.error("Failed to update title:", err);
-      toast.error("Failed to update title", {
+      toast.error("Failed to rename board", {
         description: err instanceof ApiError ? err.message : "Please try again",
       });
     } finally {
