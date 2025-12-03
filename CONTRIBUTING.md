@@ -38,8 +38,8 @@ Feature requests are welcome! Please:
 
 ### Prerequisites
 
-- Node.js 18+
-- pnpm 8+
+- Node.js 22+
+- pnpm 10+
 - Docker and Docker Compose
 
 ### Getting Started
@@ -57,6 +57,7 @@ with npx prisma migrate dev, and start dev server with pnpm dev.
 ## Commit Messages
 
 Use clear, descriptive commit messages:
+
 - feat: add version history panel
 - fix: resolve autosave conflict detection
 - docs: update README with deployment instructions

@@ -30,7 +30,6 @@ A self-hosted whiteboard application built with [Excalidraw](https://excalidraw.
 - 🖼️ **Image Support** — Paste or drag images onto canvas (stored in database)
 - 🔍 **Search** — Find text elements and markdown card content
 - ↩️ **Undo/Redo** — Full history during editing session
-- 🌓 **Dark/Light Mode** — Theme support
 
 #### Markdown Cards (Custom Feature)
 
@@ -54,6 +53,7 @@ A self-hosted whiteboard application built with [Excalidraw](https://excalidraw.
 #### Organizations (Workspaces)
 
 - 🏢 **Multiple Workspaces** — Create and switch between organizations
+- ✏️ **Rename Workspaces** — Owners can rename their workspaces
 - 👤 **Auto-created Personal Org** — Each user gets a default workspace
 - 🗑️ **Delete Empty Workspaces** — Remove workspaces with no boards
 - 💾 **Persistent Selection** — Remembers last workspace across sessions
@@ -66,6 +66,12 @@ A self-hosted whiteboard application built with [Excalidraw](https://excalidraw.
 - 🛡️ **Rate Limiting** — Brute-force protection on login (10/min)
 - ✅ **Input Validation** — Zod schemas on all API endpoints
 - 📝 **Audit Logging** — All actions logged with IP/user agent
+
+#### User Experience
+
+- 🔔 **Toast Notifications** — Non-blocking feedback for all actions
+- ✨ **Confirmation Modals** — Safe destructive action handling
+- 🌓 **Dark/Light Mode** — System preference detection
 
 #### Deployment
 
@@ -399,6 +405,7 @@ Supports flowcharts, sequence diagrams, class diagrams, and more. See [Mermaid d
 | ------ | ----------------------- | ----------------------- |
 | GET    | `/api/orgs`             | List user's orgs        |
 | POST   | `/api/orgs`             | Create org              |
+| PATCH  | `/api/orgs/:id`         | Rename org (owner only) |
 | DELETE | `/api/orgs/:id`         | Delete org (if empty)   |
 | GET    | `/api/orgs/:id/storage` | Get workspace storage   |
 | GET    | `/api/orgs/:id/members` | List members            |
@@ -627,6 +634,7 @@ From the original `todo.md` planning document:
 | Framework  | Next.js        | 16.0.5  | Pages Router, standalone output   |
 | UI         | React          | 19.2.0  | Concurrent features enabled       |
 | Styling    | Tailwind CSS   | 4.1.x   | PostCSS plugin                    |
+| Toasts     | Sonner         | 2.x     | Non-blocking notifications        |
 | Database   | PostgreSQL     | 16      | Alpine image in Docker            |
 | ORM        | Prisma         | 6.19.x  | With migrations                   |
 | Auth       | NextAuth.js    | 4.24.x  | JWT strategy, credentials + OAuth |
