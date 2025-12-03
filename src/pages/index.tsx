@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
+import { toast } from "sonner";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -160,10 +161,11 @@ export default function HomePage() {
       setShowCreateModal(false);
 
       // Navigate to the new board
+      toast.success("Board created");
       router.push(`/boards/${board.id}`);
     } catch (err) {
       console.error("Failed to create board:", err);
-      alert(err instanceof ApiError ? err.message : "Failed to create board");
+      toast.error(err instanceof ApiError ? err.message : "Failed to create board");
     } finally {
       setCreating(false);
     }
@@ -174,12 +176,14 @@ export default function HomePage() {
     try {
       // Find the board to check its current state
       const board = boards.find((b) => b.id === boardId);
-      await boardApi.archive(boardId, !board?.isArchived);
+      const isArchiving = !board?.isArchived;
+      await boardApi.archive(boardId, isArchiving);
       await loadBoards();
       await loadWorkspaceStorage();
+      toast.success(isArchiving ? "Board archived" : "Board restored");
     } catch (err) {
       console.error("Failed to archive board:", err);
-      alert(err instanceof ApiError ? err.message : "Failed to archive board");
+      toast.error(err instanceof ApiError ? err.message : "Failed to archive board");
     }
   };
 
@@ -200,9 +204,10 @@ export default function HomePage() {
       setBoardToDelete(null);
       await loadBoards();
       await loadWorkspaceStorage();
+      toast.success("Board deleted");
     } catch (err) {
       console.error("Failed to delete board:", err);
-      alert(err instanceof ApiError ? err.message : "Failed to delete board");
+      toast.error(err instanceof ApiError ? err.message : "Failed to delete board");
     } finally {
       setDeleting(false);
     }
@@ -217,18 +222,18 @@ export default function HomePage() {
       const data = await res.json();
 
       if (data.cleaned) {
-        alert(
+        toast.success(
           `Cleaned up ${data.filesRemoved} orphaned file(s), freed ${data.bytesFreedFormatted}`
         );
         // Refresh board list and storage info
         loadBoards();
         loadWorkspaceStorage();
       } else {
-        alert("No orphaned files to clean up.");
+        toast.info("No orphaned files to clean up");
       }
     } catch (err) {
       console.error("Failed to cleanup board:", err);
-      alert("Failed to cleanup board");
+      toast.error("Failed to cleanup board");
     }
   };
 

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { useApp } from "@/contexts/AppContext";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -63,6 +64,7 @@ export function Header() {
       setNewOrgName("");
       setNewOrgSlug("");
       setShowNewOrgModal(false);
+      toast.success("Workspace created");
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to create organization"
@@ -82,6 +84,7 @@ export function Header() {
       await deleteOrg(orgToDelete.id);
       setOrgToDelete(null);
       setShowDeleteConfirm(false);
+      toast.success("Workspace deleted");
     } catch (err) {
       setDeleteError(
         err instanceof Error ? err.message : "Failed to delete workspace"

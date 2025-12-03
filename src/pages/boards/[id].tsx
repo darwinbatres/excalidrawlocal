@@ -12,6 +12,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import Head from "next/head";
 import dynamic from "next/dynamic";
+import { toast } from "sonner";
 import { useApp } from "@/contexts/AppContext";
 import { boardApi, ApiError, type BoardWithScene } from "@/services/api.client";
 import { Button } from "@/components/ui/Button";
@@ -97,7 +98,7 @@ export default function BoardPage() {
       setIsEditing(false);
     } catch (err) {
       console.error("Failed to update title:", err);
-      alert(err instanceof ApiError ? err.message : "Failed to update title");
+      toast.error(err instanceof ApiError ? err.message : "Failed to update title");
     } finally {
       setSaving(false);
     }

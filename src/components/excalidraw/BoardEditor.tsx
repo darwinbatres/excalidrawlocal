@@ -16,6 +16,7 @@ import "@excalidraw/excalidraw/index.css";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
+import { toast } from "sonner";
 import type { BoardVersion, SaveStatus } from "@/types";
 import { boardApi, ApiError, type BoardWithScene } from "@/services/api.client";
 import { stripVolatileAppState } from "@/lib/utils";
@@ -468,9 +469,10 @@ export function BoardEditor({
 
       // Refresh storage info after restore
       fetchStorageInfo();
+      toast.success(`Restored to version ${versionToRestore.version}`);
     } catch (error) {
       console.error("Failed to restore version:", error);
-      alert(
+      toast.error(
         error instanceof ApiError ? error.message : "Failed to restore version"
       );
     } finally {
