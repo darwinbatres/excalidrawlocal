@@ -79,19 +79,25 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
       return res.status(404).json({ error: "Organization not found" });
     }
 
-    // Get all boards with their thumbnails
+    // Parse archived filter from query (defaults to false)
+    const showArchived = req.query.archived === "true";
+
+    // Get boards filtered by archived status
     const boards = await prisma.board.findMany({
-      where: { orgId },
+      where: { orgId, isArchived: showArchived },
       select: {
         id: true,
         thumbnail: true,
       },
     });
 
-    // Get all versions for all boards in this org
+    // Get board IDs for filtering versions
+    const boardIds = boards.map((b) => b.id);
+
+    // Get all versions for non-archived boards in this org
     const versions = await prisma.boardVersion.findMany({
       where: {
-        board: { orgId },
+        boardId: { in: boardIds },
       },
       select: {
         boardId: true,

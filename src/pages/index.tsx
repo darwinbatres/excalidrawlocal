@@ -114,7 +114,13 @@ export default function HomePage() {
     if (!currentOrg) return;
 
     try {
-      const res = await fetch(`/api/orgs/${currentOrg.id}/storage`);
+      const res = await fetch(
+        `/api/orgs/${currentOrg.id}/storage?archived=${showArchived}`,
+        {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache" },
+        }
+      );
       if (res.ok) {
         const data = await res.json();
         setWorkspaceStorage(data.totalFormatted);
@@ -122,7 +128,7 @@ export default function HomePage() {
     } catch (err) {
       console.error("Failed to load workspace storage:", err);
     }
-  }, [currentOrg]);
+  }, [currentOrg, showArchived]);
 
   useEffect(() => {
     if (isAuthenticated && currentOrg) {
@@ -164,7 +170,8 @@ export default function HomePage() {
       // Find the board to check its current state
       const board = boards.find((b) => b.id === boardId);
       await boardApi.archive(boardId, !board?.isArchived);
-      loadBoards();
+      await loadBoards();
+      await loadWorkspaceStorage();
     } catch (err) {
       console.error("Failed to archive board:", err);
       alert(err instanceof ApiError ? err.message : "Failed to archive board");
@@ -183,7 +190,8 @@ export default function HomePage() {
 
     try {
       await boardApi.delete(boardId);
-      loadBoards();
+      await loadBoards();
+      await loadWorkspaceStorage();
     } catch (err) {
       console.error("Failed to delete board:", err);
       alert(err instanceof ApiError ? err.message : "Failed to delete board");
