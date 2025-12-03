@@ -98,7 +98,9 @@ export default function BoardPage() {
       setIsEditing(false);
     } catch (err) {
       console.error("Failed to update title:", err);
-      toast.error(err instanceof ApiError ? err.message : "Failed to update title");
+      toast.error("Failed to update title", {
+        description: err instanceof ApiError ? err.message : "Please try again",
+      });
     } finally {
       setSaving(false);
     }

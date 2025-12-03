@@ -60,11 +60,14 @@ export function Header() {
     setError(null);
 
     try {
-      await createOrg(newOrgName.trim(), newOrgSlug.trim());
+      const orgName = newOrgName.trim();
+      await createOrg(orgName, newOrgSlug.trim());
       setNewOrgName("");
       setNewOrgSlug("");
       setShowNewOrgModal(false);
-      toast.success("Workspace created");
+      toast("Workspace created", {
+        description: orgName,
+      });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to create organization"
@@ -81,10 +84,13 @@ export function Header() {
     setDeleteError(null);
 
     try {
+      const deletedName = orgToDelete.name;
       await deleteOrg(orgToDelete.id);
       setOrgToDelete(null);
       setShowDeleteConfirm(false);
-      toast.success("Workspace deleted");
+      toast("Workspace deleted", {
+        description: deletedName,
+      });
     } catch (err) {
       setDeleteError(
         err instanceof Error ? err.message : "Failed to delete workspace"

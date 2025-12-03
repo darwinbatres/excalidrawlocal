@@ -109,3 +109,56 @@ body {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+/* ============================================
+   Sonner Toast Overrides
+   ============================================ */
+
+/* Toast description text */
+.sonner-description {
+  color: #737373 !important;
+  font-size: 14px !important;
+  margin-top: 2px !important;
+}
+
+/* Toast action button */
+[data-sonner-toast] [data-button] {
+  background: #171717 !important;
+  color: white !important;
+  border-radius: 6px !important;
+  padding: 6px 12px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  border: none !important;
+}
+
+[data-sonner-toast] [data-button]:hover {
+  background: #404040 !important;
+}
+
+/* Remove default icons for cleaner look */
+[data-sonner-toast] [data-icon] {
+  display: none !important;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  [data-sonner-toast] {
+    background: #1c1c1e !important;
+    border-color: #38383a !important;
+    color: #f5f5f5 !important;
+  }
+
+  .sonner-description {
+    color: #a1a1a1 !important;
+  }
+
+  [data-sonner-toast] [data-button] {
+    background: #f5f5f5 !important;
+    color: #171717 !important;
+  }
+
+  [data-sonner-toast] [data-button]:hover {
+    background: #e5e5e5 !important;
+  }
+}

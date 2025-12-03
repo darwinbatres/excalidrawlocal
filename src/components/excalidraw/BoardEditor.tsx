@@ -469,12 +469,15 @@ export function BoardEditor({
 
       // Refresh storage info after restore
       fetchStorageInfo();
-      toast.success(`Restored to version ${versionToRestore.version}`);
+      toast("Version restored", {
+        description: `Restored to version ${versionToRestore.version}`,
+      });
     } catch (error) {
       console.error("Failed to restore version:", error);
-      toast.error(
-        error instanceof ApiError ? error.message : "Failed to restore version"
-      );
+      toast.error("Failed to restore version", {
+        description:
+          error instanceof ApiError ? error.message : "Please try again",
+      });
     } finally {
       setRestoring(false);
     }

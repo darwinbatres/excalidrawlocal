@@ -161,11 +161,15 @@ export default function HomePage() {
       setShowCreateModal(false);
 
       // Navigate to the new board
-      toast.success("Board created");
+      toast("Board created", {
+        description: board.title,
+      });
       router.push(`/boards/${board.id}`);
     } catch (err) {
       console.error("Failed to create board:", err);
-      toast.error(err instanceof ApiError ? err.message : "Failed to create board");
+      toast.error("Failed to create board", {
+        description: err instanceof ApiError ? err.message : "Please try again",
+      });
     } finally {
       setCreating(false);
     }
@@ -180,10 +184,14 @@ export default function HomePage() {
       await boardApi.archive(boardId, isArchiving);
       await loadBoards();
       await loadWorkspaceStorage();
-      toast.success(isArchiving ? "Board archived" : "Board restored");
+      toast(isArchiving ? "Board archived" : "Board restored", {
+        description: board?.title,
+      });
     } catch (err) {
       console.error("Failed to archive board:", err);
-      toast.error(err instanceof ApiError ? err.message : "Failed to archive board");
+      toast.error("Failed to archive board", {
+        description: err instanceof ApiError ? err.message : "Please try again",
+      });
     }
   };
 
@@ -199,15 +207,20 @@ export default function HomePage() {
 
     setDeleting(true);
     try {
+      const deletedTitle = boardToDelete.title;
       await boardApi.delete(boardToDelete.id);
       setShowDeleteModal(false);
       setBoardToDelete(null);
       await loadBoards();
       await loadWorkspaceStorage();
-      toast.success("Board deleted");
+      toast("Board deleted", {
+        description: deletedTitle,
+      });
     } catch (err) {
       console.error("Failed to delete board:", err);
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete board");
+      toast.error("Failed to delete board", {
+        description: err instanceof ApiError ? err.message : "Please try again",
+      });
     } finally {
       setDeleting(false);
     }
@@ -216,24 +229,29 @@ export default function HomePage() {
   // Cleanup board (remove orphaned files)
   const handleCleanupBoard = async (boardId: string) => {
     try {
+      const board = boards.find((b) => b.id === boardId);
       const res = await fetch(`/api/boards/${boardId}/cleanup`, {
         method: "POST",
       });
       const data = await res.json();
 
       if (data.cleaned) {
-        toast.success(
-          `Cleaned up ${data.filesRemoved} orphaned file(s), freed ${data.bytesFreedFormatted}`
-        );
+        toast("Cleanup complete", {
+          description: `Removed ${data.filesRemoved} file(s), freed ${data.bytesFreedFormatted}`,
+        });
         // Refresh board list and storage info
         loadBoards();
         loadWorkspaceStorage();
       } else {
-        toast.info("No orphaned files to clean up");
+        toast("Nothing to clean up", {
+          description: board?.title || "No orphaned files found",
+        });
       }
     } catch (err) {
       console.error("Failed to cleanup board:", err);
-      toast.error("Failed to cleanup board");
+      toast.error("Cleanup failed", {
+        description: "Please try again",
+      });
     }
   };
 
