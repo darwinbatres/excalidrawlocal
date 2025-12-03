@@ -1,0 +1,119 @@
+# =============================================================================
+# Enterprise Excalidraw - Docker Compose
+# =============================================================================
+# Usage:
+#   docker compose up -d --build     # Start all services
+#   docker compose down              # Stop all services
+#   docker compose logs -f app       # Follow app logs
+#   docker compose exec app sh       # Shell into app container
+#
+# With Cloudflare Tunnel (production):
+#   1. Create tunnel at https://one.dash.cloudflare.com → Networks → Tunnels
+#   2. Copy the tunnel token
+#   3. Set CLOUDFLARE_TUNNEL_TOKEN in .env
+#   4. docker compose --profile tunnel up -d --build
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: excalidraw-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-excalidraw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-excalidraw_secret_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-excalidraw}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Expose port for local development (remove for production)
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-excalidraw} -d ${POSTGRES_DB:-excalidraw}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - excalidraw-network
+
+  # ---------------------------------------------------------------------------
+  # Next.js Application
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NODE_ENV=production
+    container_name: excalidraw-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Override for Docker networking (internal hostnames)
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-excalidraw}:${POSTGRES_PASSWORD:-excalidraw_secret_change_me}@postgres:5432/${POSTGRES_DB:-excalidraw}?schema=public
+    ports:
+      - "3021:3021"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3021/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - excalidraw-network
+
+  # ---------------------------------------------------------------------------
+  # Cloudflare Tunnel (Optional - use profile "tunnel" to enable)
+  # ---------------------------------------------------------------------------
+  # This service creates a secure tunnel to Cloudflare's network, allowing
+  # you to expose your app without opening ports on your firewall.
+  #
+  # Setup:
+  #   1. Go to https://one.dash.cloudflare.com
+  #   2. Navigate to Networks → Tunnels → Create a tunnel
+  #   3. Choose "Cloudflared" connector, give it a name
+  #   4. Copy the token (it starts with "eyJ...")
+  #   5. Add to .env: CLOUDFLARE_TUNNEL_TOKEN=eyJ...
+  #   6. In the tunnel config, add a public hostname:
+  #      - Subdomain: your-choice
+  #      - Domain: yourdomain.com
+  #      - Service: http://app:3021
+  #   7. Run: docker compose --profile tunnel up -d
+  # ---------------------------------------------------------------------------
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: excalidraw-tunnel
+    restart: unless-stopped
+    profiles:
+      - tunnel
+    depends_on:
+      app:
+        condition: service_healthy
+    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - excalidraw-network
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  excalidraw-network:
+    driver: bridge

@@ -1,0 +1,273 @@
+// =============================================================================
+// Enterprise Excalidraw - Prisma Schema
+// =============================================================================
+// This schema defines the data model for the application.
+// Run `pnpm prisma migrate dev` to create migrations
+// Run `pnpm prisma generate` to generate the Prisma client
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// User Management
+// =============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+  passwordHash  String?   // For credentials provider (hashed with bcrypt)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  memberships    Membership[]
+  boardsOwned    Board[]        @relation("BoardOwner")
+  boardVersions  BoardVersion[]
+  accounts       Account[]
+  sessions       Session[]
+
+  @@index([email])
+}
+
+// =============================================================================
+// Auth.js Models (NextAuth)
+// =============================================================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// =============================================================================
+// Organization & Membership (Multi-tenant)
+// =============================================================================
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  memberships Membership[]
+  boards      Board[]
+  auditEvents AuditEvent[]
+
+  @@index([slug])
+}
+
+model Membership {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  role      OrgRole  @default(MEMBER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  org              Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  boardPermissions BoardPermission[]
+
+  @@unique([orgId, userId])
+  @@index([userId])
+  @@index([orgId])
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+// =============================================================================
+// Boards & Versions
+// =============================================================================
+
+model Board {
+  id          String   @id @default(cuid())
+  orgId       String
+  ownerId     String
+  title       String
+  description String?
+  tags        String[] @default([])
+  isArchived  Boolean  @default(false)
+  thumbnail   String?  @db.Text // Base64 data URL for preview image
+
+  // Version tracking
+  currentVersionId String?
+  versionNumber    Int     @default(0)
+
+  // Optimistic concurrency control
+  etag String @default(cuid())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  org         Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  owner       User              @relation("BoardOwner", fields: [ownerId], references: [id])
+  versions    BoardVersion[]
+  assets      BoardAsset[]
+  permissions BoardPermission[]
+
+  @@index([orgId, updatedAt(sort: Desc)])
+  @@index([orgId, isArchived])
+  @@index([ownerId])
+  @@index([title])
+}
+
+model BoardVersion {
+  id           String   @id @default(cuid())
+  boardId      String
+  version      Int
+  createdById  String
+  label        String?  // Optional checkpoint label
+  createdAt    DateTime @default(now())
+
+  // Excalidraw scene data
+  sceneJson    Json
+  appStateJson Json?
+  thumbnailUrl String?
+
+  // Relations
+  board     Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  createdBy User  @relation(fields: [createdById], references: [id])
+
+  @@unique([boardId, version])
+  @@index([boardId, createdAt(sort: Desc)])
+  @@index([boardId, version])
+}
+
+model BoardPermission {
+  id           String    @id @default(cuid())
+  boardId      String
+  membershipId String
+  role         BoardRole @default(VIEWER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  board      Board      @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, membershipId])
+  @@index([membershipId])
+}
+
+enum BoardRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+// =============================================================================
+// Assets (S3 Storage)
+// =============================================================================
+
+model BoardAsset {
+  id         String   @id @default(cuid())
+  boardId    String
+  fileId     String   // Excalidraw's internal file ID
+  mimeType   String
+  sizeBytes  Int
+  storageKey String   // S3 object key
+  sha256     String
+  createdAt  DateTime @default(now())
+
+  // Relations
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, fileId])
+  @@index([boardId])
+  @@index([sha256])
+}
+
+// =============================================================================
+// Audit Log (Append-only)
+// =============================================================================
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  orgId      String
+  actorId    String?
+  action     String
+  targetType String
+  targetId   String
+  ip         String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  // Relations
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([targetType, targetId])
+  @@index([action])
+}
+
+// =============================================================================
+// Share Links (Optional feature)
+// =============================================================================
+
+model ShareLink {
+  id        String    @id @default(cuid())
+  boardId   String
+  token     String    @unique @default(cuid())
+  role      BoardRole @default(VIEWER)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  createdBy String
+
+  @@index([token])
+  @@index([boardId])
+}
