@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import mermaid from "mermaid";
@@ -270,6 +276,51 @@ export default function MarkdownCardEditor({
           )}
         </div>
 
+        {/* Size limit error banner */}
+        {isOverLimit && (
+          <div className="px-6 py-3 bg-red-50 dark:bg-red-900/20 border-t border-red-200 dark:border-red-800">
+            <div className="flex items-start gap-3">
+              <svg
+                className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-800 dark:text-red-200">
+                  Content exceeds maximum size limit
+                </p>
+                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                  Your content is {formatBytes(contentSize)} but the maximum allowed is {formatBytes(MAX_MARKDOWN_CARD_SIZE)}.
+                  Please reduce by {formatBytes(contentSize - MAX_MARKDOWN_CARD_SIZE)}.
+                </p>
+                <p className="text-xs text-red-500 dark:text-red-500 mt-2">
+                  💡 Tip: Try removing images, shortening text, or splitting content into multiple cards.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Size warning banner */}
+        {isNearLimit && !isOverLimit && (
+          <div className="px-6 py-2 bg-amber-50 dark:bg-amber-900/20 border-t border-amber-200 dark:border-amber-800">
+            <p className="text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Approaching size limit: {formatBytes(contentSize)} / {formatBytes(MAX_MARKDOWN_CARD_SIZE)} ({Math.round(sizePercentage)}%)
+            </p>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t dark:border-gray-700">
           <div className="flex items-center gap-4">
@@ -292,7 +343,9 @@ export default function MarkdownCardEditor({
                   ? "text-amber-600 dark:text-amber-400"
                   : "text-gray-500 dark:text-gray-400"
               }`}
-              title={`${formatBytes(contentSize)} / ${formatBytes(MAX_MARKDOWN_CARD_SIZE)}`}
+              title={`${formatBytes(contentSize)} / ${formatBytes(
+                MAX_MARKDOWN_CARD_SIZE
+              )}`}
             >
               <svg
                 className="w-3.5 h-3.5"
@@ -307,8 +360,7 @@ export default function MarkdownCardEditor({
                   d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
                 />
               </svg>
-              {formatBytes(contentSize)}
-              {isOverLimit && " (over limit!)"}
+              {formatBytes(contentSize)} / {formatBytes(MAX_MARKDOWN_CARD_SIZE)}
             </div>
           </div>
           <div className="flex gap-3">

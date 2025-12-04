@@ -19,28 +19,28 @@
  * Based on typical markdown document sizes and database field limits.
  * 100KB allows for extensive documentation while preventing abuse.
  */
-export const MAX_MARKDOWN_CARD_SIZE = 100 * 1024; // 100 KB
+export const MAX_MARKDOWN_CARD_SIZE = 1000 * 1024; // 1000 KB
 
 /**
  * Maximum size for a single rich text card content (Tiptap JSON).
  * Tiptap JSON is more verbose than markdown, so allow larger size.
  * 200KB supports complex formatted documents with tables.
  */
-export const MAX_RICH_TEXT_CARD_SIZE = 200 * 1024; // 200 KB
+export const MAX_RICH_TEXT_CARD_SIZE = 2000 * 1024; // 2000 KB
 
 /**
  * Maximum size for a single embedded image (base64).
  * 5MB allows high-quality images while keeping board size manageable.
  * Consider compression for larger images.
  */
-export const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
+export const MAX_IMAGE_SIZE = 50 * 1024 * 1024; // 50 MB
 
 /**
  * Maximum total board size (all elements + files + app state).
  * 50MB is a reasonable limit for a single board.
  * Users should create multiple boards for very large projects.
  */
-export const MAX_BOARD_SIZE = 50 * 1024 * 1024; // 50 MB
+export const MAX_BOARD_SIZE = 500 * 1024 * 1024; // 500 MB
 
 /**
  * Warning threshold for board size.
