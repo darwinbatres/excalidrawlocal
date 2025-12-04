@@ -407,16 +407,14 @@ export function BoardEditor({
           if (isRichTextCard && el.customData?.richTextContent) {
             try {
               const content = JSON.parse(el.customData.richTextContent);
-              const extractText = (node: {
-                text?: string;
-                content?: unknown[];
-              }): string => {
+              type TiptapNode = { text?: string; content?: TiptapNode[] };
+              const extractText = (node: TiptapNode): string => {
                 if (node.text) return node.text;
                 if (node.content)
                   return node.content.map(extractText).join(" ");
                 return "";
               };
-              searchableText = extractText(content);
+              searchableText = extractText(content as TiptapNode);
             } catch {
               searchableText = "Rich text card";
             }
