@@ -53,6 +53,28 @@ with npx prisma migrate dev, and start dev server with pnpm dev.
 - TypeScript: Use strict types, avoid any
 - Components: Functional components with hooks
 - Naming: PascalCase for components, camelCase for functions
+- Constants: All size limits and config values should go in src/lib/constants.ts
+
+## Architecture Notes
+
+### Storage Limits
+
+Content size limits are centralized in `src/lib/constants.ts`. When adding new
+content types or modifying limits:
+
+1. Add/update constants in `constants.ts` with clear documentation
+2. Update storage APIs to track new content types
+3. Add client-side validation with real-time feedback
+4. Include actionable error messages with size information
+
+### Card Components
+
+Markdown and Rich Text cards follow a consistent pattern:
+
+- Real-time size tracking with visual indicators
+- Warning at 80% of limit, error at 100%
+- Save prevention when over limit
+- Actionable error messages with reduction tips
 
 ## Commit Messages
 
@@ -61,6 +83,7 @@ Use clear, descriptive commit messages:
 - feat: add version history panel
 - fix: resolve autosave conflict detection
 - docs: update README with deployment instructions
+- style: format with Prettier
 
 ## Questions?
 

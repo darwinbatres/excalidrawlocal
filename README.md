@@ -54,6 +54,7 @@ A self-hosted whiteboard application built with [Excalidraw](https://excalidraw.
 - ⌨️ **Keyboard Shortcuts** — Cmd/Ctrl+B, I, U, S for quick formatting
 - 📐 **Resizable & Movable** — Behaves like any Excalidraw element
 - 🔍 **Searchable** — Content is indexed for Excalidraw's search
+- ⚠️ **Size Validation** — Real-time size tracking with warnings at 80% limit
 
 #### Board Management
 
@@ -62,8 +63,9 @@ A self-hosted whiteboard application built with [Excalidraw](https://excalidraw.
 - 📜 **Version History** — View and restore any previous version
 - 💾 **Smart Autosave** — Saves every 10s only when content changes
 - ⚡ **Conflict Detection** — ETag-based locking prevents overwrites
-- 📊 **Storage Tracking** — See storage used per board and per workspace
+- 📊 **Storage Tracking** — Detailed breakdown by content type (images, cards, etc.)
 - 🧹 **Storage Cleanup** — Remove orphaned embedded files
+- 📏 **Size Limits** — Configurable limits with real-time validation
 
 #### Organizations (Workspaces)
 
@@ -279,7 +281,7 @@ pnpm docker:logs      # Follow app logs
 │   │   ├── ui/             # Button.tsx, Input.tsx, Modal.tsx
 │   │   └── ErrorBoundary.tsx
 │   ├── contexts/           # AppContext.tsx (auth, org state)
-│   ├── lib/                # utils.ts (classnames, etc.)
+│   ├── lib/                # utils.ts, constants.ts (config, limits)
 │   ├── pages/
 │   │   ├── api/
 │   │   │   ├── auth/       # [...nextauth].ts
@@ -395,6 +397,19 @@ Supports flowcharts, sequence diagrams, class diagrams, and more. See [Mermaid d
 | `DEMO_USER_NAME`     | Demo user display name                   |
 
 > ⚠️ **Remove `DEMO_USER_*` variables for production!**
+
+### Storage Limits (configured in `src/lib/constants.ts`)
+
+| Limit                     | Default  | Description                                   |
+| ------------------------- | -------- | --------------------------------------------- |
+| `MAX_MARKDOWN_CARD_SIZE`  | 1,000 KB | Maximum size per markdown card                |
+| `MAX_RICH_TEXT_CARD_SIZE` | 2,000 KB | Maximum size per rich text card (Tiptap JSON) |
+| `MAX_IMAGE_SIZE`          | 50 MB    | Maximum size per embedded image (base64)      |
+| `MAX_BOARD_SIZE`          | 500 MB   | Maximum total board size (all content)        |
+| `MAX_ELEMENTS_PER_BOARD`  | 10,000   | Maximum elements per board                    |
+| `MAX_VERSIONS_PER_BOARD`  | 100      | Version history retention limit               |
+
+> 💡 **Size validation**: Card editors show real-time size indicators with warnings at 80% capacity and prevent saving when over the limit. Users see actionable error messages with specific guidance on how to reduce content size.
 
 ---
 
@@ -631,6 +646,7 @@ From the original `todo.md` planning document:
 - **Rate limiter is in-memory** — Won't work correctly with multiple app instances. Use Redis for horizontal scaling.
 - **Images stored as base64 in DB** — Large boards with many images can slow down. The `BoardAsset` schema exists for S3 storage but isn't implemented.
 - **No WebSocket/real-time** — Each user works independently; changes sync on save only.
+- **Content limits enforced client-side** — Storage limits are validated in card editors. Server-side validation recommended for production hardening.
 
 ### Missing UI for Existing APIs
 
@@ -655,6 +671,7 @@ From the original `todo.md` planning document:
 | Auth       | NextAuth.js    | 4.24.x  | JWT strategy, credentials + OAuth |
 | Validation | Zod            | 3.25.x  | All API endpoints                 |
 | Whiteboard | Excalidraw     | 0.18.x  | Full editor embedded              |
+| Rich Text  | Tiptap         | 3.12.x  | Notion-style card editor          |
 | Markdown   | react-markdown | 10.1.x  | With remark-gfm                   |
 | Diagrams   | Mermaid.js     | 11.12.x | Flowcharts, sequence, class, etc. |
 | Thumbnails | html2canvas    | 1.4.x   | Board preview generation          |
