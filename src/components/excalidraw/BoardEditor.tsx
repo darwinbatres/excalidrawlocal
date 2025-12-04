@@ -25,6 +25,8 @@ import { SaveIndicator } from "./SaveIndicator";
 import { VersionHistory } from "./VersionHistory";
 import MarkdownCard from "./MarkdownCard";
 import MarkdownCardEditor from "./MarkdownCardEditor";
+import RichTextCard from "./RichTextCard";
+import RichTextCardEditor from "./RichTextCardEditor";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 
@@ -230,6 +232,14 @@ export function BoardEditor({
     string | null
   >(null);
   const [editingMarkdownContent, setEditingMarkdownContent] = useState("");
+
+  // Rich text card editor state
+  const [showRichTextEditor, setShowRichTextEditor] = useState(false);
+  const [editingRichTextElementId, setEditingRichTextElementId] = useState<
+    string | null
+  >(null);
+  const [editingRichTextContent, setEditingRichTextContent] = useState("");
+
   const [initialData, setInitialData] = useState<{
     elements: ExcalidrawElements;
     appState: ExcalidrawAppState;
@@ -249,6 +259,269 @@ export function BoardEditor({
   const lastSavedEtagRef = useRef<string>("");
   const hasUnsavedChangesRef = useRef(false);
   const lastSavedHashRef = useRef<string>("");
+  const searchTextMigrationDoneRef = useRef(false);
+  const lastZoomRef = useRef<number>(1);
+  const zoomCorrectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  /**
+   * Limits zoom level during search navigation to prevent extreme zoom.
+   *
+   * Excalidraw zooms to fit the matched search text element. Since our search text
+   * elements use fontSize: 1 (to minimize yellow highlight visibility), the automatic
+   * zoom can reach extreme levels (1400%+). This function detects that scenario and
+   * resets zoom to 100% after a brief delay, providing a better UX.
+   *
+   * @param appState - Current Excalidraw application state containing zoom and search info
+   */
+  const limitSearchZoom = useCallback((appState: ExcalidrawAppState) => {
+    if (!excalidrawRef.current) return;
+
+    const currentZoom = appState.zoom?.value || 1;
+
+    // Detect if we just did a search navigation (zoom jumped significantly above 100%)
+    const hasActiveSearch =
+      appState.searchMatches && appState.searchMatches.length > 0;
+
+    // Limit zoom if it's way too high during active search
+    if (hasActiveSearch && currentZoom > 3) {
+      // Clear any pending correction
+      if (zoomCorrectionTimeoutRef.current) {
+        clearTimeout(zoomCorrectionTimeoutRef.current);
+      }
+
+      // Schedule zoom correction
+      zoomCorrectionTimeoutRef.current = setTimeout(() => {
+        if (!excalidrawRef.current) return;
+        excalidrawRef.current.updateScene({
+          appState: {
+            zoom: { value: 1 as 0.1 },
+          },
+        });
+      }, 50);
+    }
+
+    lastZoomRef.current = currentZoom;
+  }, []);
+
+  /**
+   * Migrates search text elements to ensure they're properly positioned and configured.
+   *
+   * Search text elements are invisible text elements grouped with markdown/rich text cards.
+   * They enable Excalidraw's built-in search to find card content. This migration:
+   *
+   * 1. Positions search text at the same location as parent card (for proper navigation)
+   * 2. Creates missing search text elements for legacy cards
+   * 3. Removes orphaned search text elements (cards that were deleted)
+   * 4. Sets fontSize: 1 to minimize the yellow highlight box Excalidraw draws
+   *
+   * @param api - Excalidraw API instance for scene manipulation
+   */
+  const migrateSearchTextElements = useCallback((api: ExcalidrawAPI) => {
+    if (searchTextMigrationDoneRef.current) return;
+
+    const elements = api.getSceneElements();
+    let needsUpdate = false;
+    const updatedElements = elements.map((el) => {
+      // Check if this is a markdown or rich text search text element
+      // Check by customData OR by ID pattern
+      const isSearchText =
+        el.customData?.isMarkdownSearchText ||
+        el.customData?.isRichTextSearchText ||
+        el.id?.startsWith("rtsearch-") ||
+        el.id?.startsWith("mdsearch-");
+      if (!isSearchText) return el;
+
+      // Find the parent card - try customData first, then ID pattern
+      let parentId =
+        el.customData?.parentMarkdownCardId ||
+        el.customData?.parentRichTextCardId;
+
+      // If no customData parent, derive from ID
+      if (!parentId && el.id?.startsWith("rtsearch-")) {
+        parentId = el.id.replace("rtsearch-", "");
+      } else if (!parentId && el.id?.startsWith("mdsearch-")) {
+        parentId = el.id.replace("mdsearch-", "");
+      }
+
+      const parentCard = parentId
+        ? elements.find((e) => e.id === parentId)
+        : null;
+
+      if (!parentCard) return el;
+
+      // Position search text at same location as parent card
+      const idealX = parentCard.x;
+      const idealY = parentCard.y;
+
+      // Check if element needs migration (use small tolerance)
+      const needsPositionFix =
+        Math.abs(el.x - idealX) > 1 || Math.abs(el.y - idealY) > 1;
+      const needsSizeFix =
+        Math.abs(el.width - parentCard.width) > 1 ||
+        Math.abs(el.height - parentCard.height) > 1;
+
+      if (needsPositionFix || needsSizeFix) {
+        needsUpdate = true;
+        return {
+          ...el,
+          x: idealX,
+          y: idealY,
+          width: parentCard.width,
+          height: parentCard.height,
+          fontSize: 1, // Tiny font so yellow highlight is nearly invisible
+          version: (el.version || 1) + 1,
+          updated: Date.now(),
+        };
+      }
+      return el;
+    });
+
+    // Also check for rich text/markdown cards that are missing search text elements
+    // and create them
+    const cardsNeedingSearchText: typeof updatedElements = [];
+    updatedElements.forEach((el) => {
+      const isRichTextCard =
+        el.customData?.isRichTextCard || el.link?.startsWith("richtext://");
+      const isMarkdownCard =
+        el.customData?.isMarkdownCard || el.link?.startsWith("markdown://");
+
+      if (isRichTextCard || isMarkdownCard) {
+        // Check if this card has a corresponding search text element
+        const searchTextId =
+          el.customData?.searchTextElementId ||
+          (isRichTextCard ? `rtsearch-${el.id}` : `mdsearch-${el.id}`);
+        const hasSearchText = updatedElements.some(
+          (e) =>
+            e.id === searchTextId ||
+            e.customData?.parentRichTextCardId === el.id ||
+            e.customData?.parentMarkdownCardId === el.id
+        );
+
+        if (!hasSearchText) {
+          // Create a search text element for this card
+          const seed = Math.floor(Math.random() * 2000000000);
+          const groupId = el.groupIds?.[0] || `group-${el.id}`;
+
+          // Extract searchable text from card content
+          let searchableText = "";
+          if (isRichTextCard && el.customData?.richTextContent) {
+            try {
+              const content = JSON.parse(el.customData.richTextContent);
+              const extractText = (node: {
+                text?: string;
+                content?: unknown[];
+              }): string => {
+                if (node.text) return node.text;
+                if (node.content)
+                  return node.content.map(extractText).join(" ");
+                return "";
+              };
+              searchableText = extractText(content);
+            } catch {
+              searchableText = "Rich text card";
+            }
+          } else if (isMarkdownCard && el.customData?.markdown) {
+            searchableText = el.customData.markdown.replace(
+              /[#*_`~\[\]()]/g,
+              " "
+            );
+          }
+
+          const newSearchTextElement = {
+            id: searchTextId,
+            type: "text" as const,
+            x: el.x,
+            y: el.y,
+            width: el.width,
+            height: el.height,
+            angle: 0,
+            strokeColor: "transparent",
+            backgroundColor: "transparent",
+            fillStyle: "solid" as const,
+            strokeWidth: 0,
+            strokeStyle: "solid" as const,
+            roughness: 0,
+            opacity: 0,
+            groupIds: [groupId],
+            frameId: null,
+            index: null,
+            roundness: null,
+            seed: seed,
+            version: 1,
+            versionNonce: seed,
+            isDeleted: false,
+            boundElements: null,
+            updated: Date.now(),
+            link: null,
+            locked: true,
+            text: searchableText || "Card content",
+            originalText: searchableText || "Card content",
+            fontSize: 1,
+            fontFamily: 1,
+            textAlign: "left" as const,
+            verticalAlign: "top" as const,
+            containerId: null,
+            lineHeight: 1.25,
+            autoResize: false,
+            customData: isRichTextCard
+              ? { isRichTextSearchText: true, parentRichTextCardId: el.id }
+              : { isMarkdownSearchText: true, parentMarkdownCardId: el.id },
+          };
+
+          cardsNeedingSearchText.push(
+            newSearchTextElement as (typeof updatedElements)[0]
+          );
+          needsUpdate = true;
+        }
+      }
+    });
+
+    if (cardsNeedingSearchText.length > 0) {
+      updatedElements.push(...cardsNeedingSearchText);
+    }
+
+    // Clean up: remove orphaned search text elements (no parent card)
+    // and ensure all search text elements are positioned correctly
+    const finalElements = updatedElements.filter((el) => {
+      // Check if this is a search text element
+      const isSearchText =
+        el.customData?.isMarkdownSearchText ||
+        el.customData?.isRichTextSearchText ||
+        el.id?.startsWith("rtsearch-") ||
+        el.id?.startsWith("mdsearch-");
+
+      if (!isSearchText) return true; // Keep non-search elements
+
+      // Find parent card
+      let parentId =
+        el.customData?.parentMarkdownCardId ||
+        el.customData?.parentRichTextCardId;
+      if (!parentId && el.id?.startsWith("rtsearch-")) {
+        parentId = el.id.replace("rtsearch-", "");
+      } else if (!parentId && el.id?.startsWith("mdsearch-")) {
+        parentId = el.id.replace("mdsearch-", "");
+      }
+
+      const parentCard = parentId
+        ? updatedElements.find((e) => e.id === parentId)
+        : null;
+
+      // Remove orphaned search text elements
+      if (!parentCard) {
+        needsUpdate = true;
+        return false;
+      }
+
+      return true;
+    });
+
+    if (needsUpdate) {
+      api.updateScene({ elements: finalElements });
+      hasUnsavedChangesRef.current = true;
+    }
+
+    searchTextMigrationDoneRef.current = true;
+  }, []);
 
   // Load board and initial data from API
   useEffect(() => {
@@ -267,8 +540,61 @@ export function BoardEditor({
             elements?: ExcalidrawElements;
             files?: BinaryFiles;
           };
-          const elements = sceneJson.elements || [];
+          const rawElements = sceneJson.elements || [];
           const files = sceneJson.files || {};
+
+          // Migrate search text elements inline before setting initial data
+          // Position them at card location with minimal size to keep yellow highlight small
+          const elements = rawElements.map((el) => {
+            // Check by customData OR by ID pattern (rtsearch- or mdsearch-)
+            const isSearchText =
+              el.customData?.isMarkdownSearchText ||
+              el.customData?.isRichTextSearchText ||
+              el.id?.startsWith("rtsearch-") ||
+              el.id?.startsWith("mdsearch-");
+            if (!isSearchText) return el;
+
+            // Find parent by customData OR by ID pattern
+            let parentId =
+              el.customData?.parentMarkdownCardId ||
+              el.customData?.parentRichTextCardId;
+
+            // If no customData parent, try to derive from ID
+            if (!parentId && el.id?.startsWith("rtsearch-")) {
+              parentId = el.id.replace("rtsearch-", "");
+            } else if (!parentId && el.id?.startsWith("mdsearch-")) {
+              parentId = el.id.replace("mdsearch-", "");
+            }
+
+            const parentCard = parentId
+              ? rawElements.find((e) => e.id === parentId)
+              : null;
+
+            if (!parentCard) return el;
+
+            // Position search text at same location as parent card
+            const idealX = parentCard.x;
+            const idealY = parentCard.y;
+            const needsFix =
+              Math.abs(el.x - idealX) > 1 ||
+              Math.abs(el.y - idealY) > 1 ||
+              Math.abs(el.width - parentCard.width) > 1 ||
+              Math.abs(el.height - parentCard.height) > 1;
+
+            if (needsFix) {
+              return {
+                ...el,
+                x: idealX,
+                y: idealY,
+                width: parentCard.width,
+                height: parentCard.height,
+                fontSize: 1,
+                version: (el.version || 1) + 1,
+                updated: Date.now(),
+              };
+            }
+            return el;
+          });
 
           setInitialData({
             elements,
@@ -400,10 +726,13 @@ export function BoardEditor({
   const handleChange = useCallback(
     (
       elements: ExcalidrawElements,
-      _appState: ExcalidrawAppState,
+      appState: ExcalidrawAppState,
       files: BinaryFiles
     ) => {
       if (!board) return;
+
+      // Limit zoom when search navigation causes extreme zoom levels
+      limitSearchZoom(appState);
 
       // Compare current scene hash with last saved hash
       const currentHash = hashSceneContent(elements, files);
@@ -411,7 +740,7 @@ export function BoardEditor({
         hasUnsavedChangesRef.current = true;
       }
     },
-    [board]
+    [board, limitSearchZoom]
   );
 
   // Manual save
@@ -542,7 +871,111 @@ export function BoardEditor({
     [editingMarkdownElementId]
   );
 
-  // Insert a new markdown card element
+  // Handle editing a rich text card (triggered by double-click)
+  const handleEditRichTextCard = useCallback(
+    (elementId: string, content: string) => {
+      setEditingRichTextElementId(elementId);
+      setEditingRichTextContent(content);
+      setShowRichTextEditor(true);
+    },
+    []
+  );
+
+  // Extract plain text from Tiptap JSON for search indexing
+  const extractTextFromTiptapJson = useCallback((json: object): string => {
+    const extractText = (node: {
+      type?: string;
+      text?: string;
+      content?: object[];
+    }): string => {
+      if (node.text) return node.text;
+      if (node.content) {
+        return node.content.map(extractText).join(" ");
+      }
+      return "";
+    };
+    return extractText(
+      json as { type?: string; text?: string; content?: object[] }
+    ).trim();
+  }, []);
+
+  /**
+   * Saves updated content to a rich text card and syncs the search text element.
+   *
+   * When a user finishes editing a rich text card, this function:
+   * 1. Updates the card's customData with the new Tiptap JSON content
+   * 2. Extracts plain text from the JSON for search indexing
+   * 3. Updates the associated search text element with the extracted text
+   * 4. Triggers autosave via hasUnsavedChangesRef
+   *
+   * @param newContent - Tiptap JSON content as a string
+   */
+  const handleSaveRichTextCard = useCallback(
+    (newContent: string) => {
+      if (!excalidrawRef.current || !editingRichTextElementId) return;
+
+      const elements = excalidrawRef.current.getSceneElements();
+
+      // Extract searchable text from JSON content
+      let searchableText = "";
+      try {
+        const parsed = JSON.parse(newContent);
+        searchableText = extractTextFromTiptapJson(parsed);
+      } catch {
+        searchableText = "Rich Text Content";
+      }
+
+      // Find the rich text card to get its search text element ID
+      const richTextCard = elements.find(
+        (el) => el.id === editingRichTextElementId
+      );
+      const searchTextElementId = richTextCard?.customData?.searchTextElementId;
+
+      const updatedElements = elements.map((el) => {
+        // Update the rich text card
+        if (el.id === editingRichTextElementId) {
+          return {
+            ...el,
+            customData: {
+              ...el.customData,
+              richTextContent: newContent,
+            },
+            // Bump version to trigger re-render
+            version: (el.version || 1) + 1,
+            updated: Date.now(),
+          };
+        }
+        // Update the linked search text element
+        if (searchTextElementId && el.id === searchTextElementId) {
+          return {
+            ...el,
+            text: searchableText,
+            originalText: searchableText,
+            version: (el.version || 1) + 1,
+            updated: Date.now(),
+          };
+        }
+        return el;
+      });
+
+      excalidrawRef.current.updateScene({ elements: updatedElements });
+      hasUnsavedChangesRef.current = true;
+      setEditingRichTextElementId(null);
+      setEditingRichTextContent("");
+    },
+    [editingRichTextElementId, extractTextFromTiptapJson]
+  );
+
+  /**
+   * Inserts a new markdown card with Mermaid diagram support at the center of the viewport.
+   *
+   * Creates two elements:
+   * 1. An embeddable element with markdown:// link (displays the MarkdownCard component)
+   * 2. A hidden search text element (enables Excalidraw search to find card content)
+   *
+   * Both elements are grouped together and the card opens in edit mode immediately.
+   * The search text element uses fontSize: 1 to minimize yellow highlight visibility.
+   */
   const handleInsertMarkdownCard = useCallback(() => {
     if (!excalidrawRef.current) return;
 
@@ -607,14 +1040,14 @@ export function BoardEditor({
 
     // Create a hidden text element for search indexing
     // This text element is grouped with the markdown card and contains plain text version
-    // It's positioned at the same location but with 0 opacity so Excalidraw's search can find it
+    // Positioned at same location as card for proper search navigation
     const searchTextElement = {
       id: searchTextId,
       type: "text" as const,
-      x: centerX - cardWidth / 2,
+      x: centerX - cardWidth / 2, // Same position as card
       y: centerY - cardHeight / 2,
-      width: cardWidth,
-      height: 20,
+      width: cardWidth, // Match card width for proper zoom on search navigation
+      height: cardHeight, // Match card height for proper zoom on search navigation
       angle: 0,
       strokeColor: "transparent",
       backgroundColor: "transparent",
@@ -637,7 +1070,7 @@ export function BoardEditor({
       locked: true,
       text: searchableText,
       originalText: searchableText,
-      fontSize: 16, // Normal font size so search doesn't zoom excessively
+      fontSize: 1, // Normal font for proper zoom to minimize highlight box
       fontFamily: 1,
       textAlign: "left" as const,
       verticalAlign: "top" as const,
@@ -658,16 +1091,159 @@ export function BoardEditor({
     hasUnsavedChangesRef.current = true;
   }, []);
 
-  // Validate embeddable URLs - accept markdown:// scheme
+  /**
+   * Inserts a new rich text card with Notion-style editing at the center of the viewport.
+   *
+   * Creates two elements:
+   * 1. An embeddable element with richtext:// link (displays the RichTextCard component)
+   * 2. A hidden search text element (enables Excalidraw search to find card content)
+   *
+   * Both elements are grouped together and the card opens in edit mode immediately.
+   * The search text element uses fontSize: 1 to minimize yellow highlight visibility.
+   */
+  const handleInsertRichTextCard = useCallback(() => {
+    if (!excalidrawRef.current) return;
+
+    const appState = excalidrawRef.current.getAppState();
+    const scrollX = appState.scrollX || 0;
+    const scrollY = appState.scrollY || 0;
+    const zoom = appState.zoom?.value || 1;
+    const viewportWidth = appState.width || 800;
+    const viewportHeight = appState.height || 600;
+
+    // Calculate center in scene coordinates
+    const centerX = -scrollX + viewportWidth / 2 / zoom;
+    const centerY = -scrollY + viewportHeight / 2 / zoom;
+
+    const cardWidth = 400;
+    const cardHeight = 300;
+    const seed = Math.floor(Math.random() * 2000000000);
+    const elementId = `rt-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 9)}`;
+    const searchTextId = `rtsearch-${elementId}`;
+    const groupId = `rtgroup-${elementId}`;
+
+    // Default rich text content (empty for a fresh start)
+    const defaultRichTextContent = JSON.stringify({
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 1 },
+          content: [{ type: "text", text: "New Rich Text Card" }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Double-click to edit this card. Use the toolbar for formatting.",
+            },
+          ],
+        },
+      ],
+    });
+
+    const searchableText = "New Rich Text Card Double-click to edit this card.";
+
+    // Create embeddable element for rich text card
+    const richTextElement = {
+      id: elementId,
+      type: "embeddable" as const,
+      x: centerX - cardWidth / 2,
+      y: centerY - cardHeight / 2,
+      width: cardWidth,
+      height: cardHeight,
+      angle: 0,
+      strokeColor: "#1e1e1e",
+      backgroundColor: "#ffffff",
+      fillStyle: "solid" as const,
+      strokeWidth: 1,
+      strokeStyle: "solid" as const,
+      roughness: 0,
+      opacity: 100,
+      groupIds: [groupId],
+      frameId: null,
+      index: null,
+      roundness: { type: 3 },
+      seed: seed,
+      version: 1,
+      versionNonce: seed,
+      isDeleted: false,
+      boundElements: null,
+      updated: Date.now(),
+      link: `richtext://${elementId}`,
+      locked: false,
+      customData: {
+        richTextContent: defaultRichTextContent,
+        isRichTextCard: true,
+        searchTextElementId: searchTextId,
+      },
+    };
+
+    // Create a hidden text element for search indexing
+    // Positioned at same location as card for proper search navigation
+    const searchTextElement = {
+      id: searchTextId,
+      type: "text" as const,
+      x: centerX - cardWidth / 2, // Same position as card
+      y: centerY - cardHeight / 2,
+      width: cardWidth, // Match card width for proper zoom on search navigation
+      height: cardHeight, // Match card height for proper zoom on search navigation
+      angle: 0,
+      strokeColor: "transparent",
+      backgroundColor: "transparent",
+      fillStyle: "solid" as const,
+      strokeWidth: 0,
+      strokeStyle: "solid" as const,
+      roughness: 0,
+      opacity: 0, // Invisible
+      groupIds: [groupId],
+      frameId: null,
+      index: null,
+      roundness: null,
+      seed: seed + 1,
+      version: 1,
+      versionNonce: seed + 1,
+      isDeleted: false,
+      boundElements: null,
+      updated: Date.now(),
+      link: null,
+      locked: true,
+      text: searchableText,
+      originalText: searchableText,
+      fontSize: 1, // Normal font for proper zoom to minimize highlight box
+      fontFamily: 1,
+      textAlign: "left" as const,
+      verticalAlign: "top" as const,
+      containerId: null,
+      lineHeight: 1.25,
+      autoResize: false,
+      customData: {
+        isRichTextSearchText: true,
+        parentRichTextCardId: elementId,
+      },
+    };
+
+    const currentElements = excalidrawRef.current.getSceneElements();
+    excalidrawRef.current.updateScene({
+      elements: [...currentElements, richTextElement, searchTextElement],
+    });
+
+    hasUnsavedChangesRef.current = true;
+  }, []);
+
+  // Validate embeddable URLs - accept markdown:// and richtext:// schemes
   const validateEmbeddable = useCallback((url: string) => {
-    if (url.startsWith("markdown://")) {
+    if (url.startsWith("markdown://") || url.startsWith("richtext://")) {
       return true;
     }
     // Allow standard embeddables (YouTube, etc.)
     return undefined; // Let Excalidraw handle with default validation
   }, []);
 
-  // Render custom embeddable content for markdown cards
+  // Render custom embeddable content for markdown and rich text cards
   const renderEmbeddable = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (element: any, appState: ExcalidrawAppState) => {
@@ -684,10 +1260,23 @@ export function BoardEditor({
           />
         );
       }
-      // Return null for non-markdown embeddables (use default rendering)
+      // Check if this is a rich text card
+      if (
+        element.link?.startsWith("richtext://") ||
+        element.customData?.isRichTextCard
+      ) {
+        return (
+          <RichTextCard
+            element={element}
+            appState={appState}
+            onEdit={viewMode ? undefined : handleEditRichTextCard}
+          />
+        );
+      }
+      // Return null for non-custom embeddables (use default rendering)
       return null;
     },
-    [handleEditMarkdownCard, viewMode]
+    [handleEditMarkdownCard, handleEditRichTextCard, viewMode]
   );
 
   // Warn before leaving with unsaved changes
@@ -738,6 +1327,47 @@ export function BoardEditor({
       <Excalidraw
         excalidrawAPI={(api) => {
           excalidrawRef.current = api as ExcalidrawAPI;
+
+          // Poll for elements and run migration when they're loaded
+          const checkForElements = () => {
+            if (searchTextMigrationDoneRef.current) return;
+            const elements = api.getSceneElements();
+            if (elements.length > 0) {
+              migrateSearchTextElements(api as ExcalidrawAPI);
+            } else {
+              // Try again in 200ms
+              setTimeout(checkForElements, 200);
+            }
+          };
+          setTimeout(checkForElements, 100);
+
+          // Subscribe to changes to correct extreme zoom during search navigation
+          api.onChange((elements, appState) => {
+            // Also try migration from onChange as backup
+            if (!searchTextMigrationDoneRef.current && elements.length > 0) {
+              migrateSearchTextElements(api as ExcalidrawAPI);
+            }
+
+            const currentZoom = appState.zoom?.value || 1;
+            const hasActiveSearch =
+              appState.searchMatches && appState.searchMatches.length > 0;
+
+            // Correct extreme zoom during search (Excalidraw sometimes zooms too much)
+            if (hasActiveSearch && currentZoom > 2) {
+              requestAnimationFrame(() => {
+                if (excalidrawRef.current) {
+                  const state = excalidrawRef.current.getAppState();
+                  if ((state.zoom?.value || 1) > 1.5) {
+                    excalidrawRef.current.updateScene({
+                      appState: {
+                        zoom: { value: 1 as 0.1 },
+                      },
+                    });
+                  }
+                }
+              });
+            }
+          });
         }}
         initialData={{
           elements: initialData.elements,
@@ -905,6 +1535,45 @@ export function BoardEditor({
                   Markdown
                 </button>
               )}
+
+              {/* Rich Text Button - only show in edit mode */}
+              {!viewMode && (
+                <button
+                  onClick={handleInsertRichTextCard}
+                  className="ToolIcon_type_button"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.25rem",
+                    padding: "0.5rem 0.75rem",
+                    borderRadius: "0.5rem",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "0.75rem",
+                    fontWeight: 500,
+                    backgroundColor: "transparent",
+                    color: "var(--color-on-surface, #1b1b1f)",
+                  }}
+                  title="Insert Rich Text Card (Notion-style editor)"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                    />
+                  </svg>
+                  Rich Text
+                </button>
+              )}
             </div>
           </div>
         </Footer>
@@ -928,6 +1597,18 @@ export function BoardEditor({
           setShowMarkdownEditor(false);
           setEditingMarkdownElementId(null);
           setEditingMarkdownContent("");
+        }}
+      />
+
+      {/* Rich Text Card Editor Modal */}
+      <RichTextCardEditor
+        isOpen={showRichTextEditor}
+        initialContent={editingRichTextContent}
+        onSave={handleSaveRichTextCard}
+        onClose={() => {
+          setShowRichTextEditor(false);
+          setEditingRichTextElementId(null);
+          setEditingRichTextContent("");
         }}
       />
 

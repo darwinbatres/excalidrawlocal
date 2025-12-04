@@ -11,6 +11,7 @@
 > - 📝 **Audit logging** for compliance (who did what, when, from where)
 > - 🔒 **Full data sovereignty** (all data stays on your PostgreSQL)
 > - 📄 **Markdown cards** with Mermaid diagram support on the canvas
+> - ✨ **Rich text cards** with Notion-style editing (Tiptap)
 >
 > If you don't need these specific features, **please use [excalidraw.com](https://excalidraw.com)** instead.
 >
@@ -37,6 +38,20 @@ A self-hosted whiteboard application built with [Excalidraw](https://excalidraw.
 - ✨ **Full Markdown** — Headings, bold, italic, links, lists, tables, code blocks
 - 📊 **Mermaid.js Diagrams** — Flowcharts, sequence diagrams, class diagrams, etc.
 - ✏️ **Double-click to Edit** — Opens modal editor with live preview
+- 📐 **Resizable & Movable** — Behaves like any Excalidraw element
+- 🔍 **Searchable** — Content is indexed for Excalidraw's search
+
+#### Rich Text Cards (Notion-style, powered by Tiptap)
+
+- ✨ **WYSIWYG Editing** — Notion-style rich text with full toolbar
+- 📝 **Rich Formatting** — Bold, italic, underline, strikethrough, highlight
+- 📋 **Task Lists** — Checkboxes for to-do items
+- 🔢 **Headings & Structure** — H1, H2, H3, bullet/numbered lists, blockquotes
+- 💻 **Code Blocks** — Syntax highlighted code snippets
+- 🔗 **Links** — Add and remove hyperlinks
+- 📏 **Text Alignment** — Left, center, right alignment
+- ↩️ **Undo/Redo** — Full editing history
+- ⌨️ **Keyboard Shortcuts** — Cmd/Ctrl+B, I, U, S for quick formatting
 - 📐 **Resizable & Movable** — Behaves like any Excalidraw element
 - 🔍 **Searchable** — Content is indexed for Excalidraw's search
 

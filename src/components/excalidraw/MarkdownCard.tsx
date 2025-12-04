@@ -31,10 +31,7 @@ interface MarkdownCardProps {
   };
   appState: {
     theme?: string;
-    searchMatches?: {
-      focusedId: string | null;
-      matches: Array<{ id: string; focus?: boolean }>;
-    } | null;
+    searchMatches?: readonly { id: string; focus: boolean }[] | null;
   };
   onEdit?: (elementId: string, markdown: string) => void;
 }
@@ -96,12 +93,13 @@ export default function MarkdownCard({
   const isDark = appState.theme === "dark";
 
   // Check if this card's search text element is highlighted by search
-  const searchTextElementId = element.customData?.searchTextElementId;
+  // First try customData, then derive from element ID for backwards compatibility
+  const searchTextElementId =
+    element.customData?.searchTextElementId ||
+    (element.id.startsWith("md-") ? `mdsearch-${element.id}` : undefined);
   const isSearchHighlighted = Boolean(
     searchTextElementId &&
-      appState.searchMatches?.matches?.some(
-        (match) => match.id === searchTextElementId && match.focus
-      )
+      appState.searchMatches?.some((match) => match.id === searchTextElementId)
   );
 
   const handleDoubleClick = useCallback(() => {
