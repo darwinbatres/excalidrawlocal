@@ -697,11 +697,14 @@ export default function RichTextCardEditor({
                   Content exceeds maximum size limit
                 </p>
                 <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                  Your content is {formatBytes(contentSize)} but the maximum allowed is {formatBytes(MAX_RICH_TEXT_CARD_SIZE)}.
-                  Please reduce by {formatBytes(contentSize - MAX_RICH_TEXT_CARD_SIZE)}.
+                  Your content is {formatBytes(contentSize)} but the maximum
+                  allowed is {formatBytes(MAX_RICH_TEXT_CARD_SIZE)}. Please
+                  reduce by {formatBytes(contentSize - MAX_RICH_TEXT_CARD_SIZE)}
+                  .
                 </p>
                 <p className="text-xs text-red-500 dark:text-red-500 mt-2">
-                  💡 Tip: Try removing large images, simplifying tables, or splitting content into multiple cards.
+                  💡 Tip: Try removing large images, simplifying tables, or
+                  splitting content into multiple cards.
                 </p>
               </div>
             </div>
@@ -712,10 +715,22 @@ export default function RichTextCardEditor({
         {isNearLimit && !isOverLimit && (
           <div className="px-6 py-2 bg-amber-50 dark:bg-amber-900/20 border-t border-amber-200 dark:border-amber-800">
             <p className="text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
               </svg>
-              Approaching size limit: {formatBytes(contentSize)} / {formatBytes(MAX_RICH_TEXT_CARD_SIZE)} ({Math.round(sizePercentage)}%)
+              Approaching size limit: {formatBytes(contentSize)} /{" "}
+              {formatBytes(MAX_RICH_TEXT_CARD_SIZE)} (
+              {Math.round(sizePercentage)}%)
             </p>
           </div>
         )}
@@ -759,7 +774,8 @@ export default function RichTextCardEditor({
                   d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
                 />
               </svg>
-              {formatBytes(contentSize)} / {formatBytes(MAX_RICH_TEXT_CARD_SIZE)}
+              {formatBytes(contentSize)} /{" "}
+              {formatBytes(MAX_RICH_TEXT_CARD_SIZE)}
             </div>
           </div>
           <div className="flex gap-3">
