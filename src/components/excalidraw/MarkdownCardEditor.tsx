@@ -1,9 +1,14 @@
 "use client";
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import mermaid from "mermaid";
+import {
+  MAX_MARKDOWN_CARD_SIZE,
+  formatBytes,
+  getContentSize,
+} from "@/lib/constants";
 
 // Track if mermaid has been initialized
 let mermaidInitialized = false;
@@ -117,6 +122,15 @@ export default function MarkdownCardEditor({
   const [activeTab, setActiveTab] = useState<"edit" | "preview">("edit");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Calculate content size
+  const contentSize = useMemo(() => getContentSize(markdown), [markdown]);
+  const isOverLimit = contentSize > MAX_MARKDOWN_CARD_SIZE;
+  const sizePercentage = Math.min(
+    100,
+    (contentSize / MAX_MARKDOWN_CARD_SIZE) * 100
+  );
+  const isNearLimit = sizePercentage > 80;
+
   useEffect(() => {
     setMarkdown(initialMarkdown);
   }, [initialMarkdown]);
@@ -128,9 +142,13 @@ export default function MarkdownCardEditor({
   }, [isOpen]);
 
   const handleSave = useCallback(() => {
+    // Prevent saving if content is too large
+    if (isOverLimit) {
+      return;
+    }
     onSave(markdown);
     onClose();
-  }, [markdown, onSave, onClose]);
+  }, [markdown, onSave, onClose, isOverLimit]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -254,16 +272,45 @@ export default function MarkdownCardEditor({
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t dark:border-gray-700">
-          <p className="text-sm text-gray-500">
-            <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">
-              ⌘S
-            </kbd>{" "}
-            to save,{" "}
-            <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">
-              Esc
-            </kbd>{" "}
-            to cancel
-          </p>
+          <div className="flex items-center gap-4">
+            <p className="text-sm text-gray-500">
+              <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">
+                ⌘S
+              </kbd>{" "}
+              to save,{" "}
+              <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">
+                Esc
+              </kbd>{" "}
+              to cancel
+            </p>
+            {/* Size indicator */}
+            <div
+              className={`text-xs flex items-center gap-1.5 ${
+                isOverLimit
+                  ? "text-red-600 dark:text-red-400"
+                  : isNearLimit
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-gray-500 dark:text-gray-400"
+              }`}
+              title={`${formatBytes(contentSize)} / ${formatBytes(MAX_MARKDOWN_CARD_SIZE)}`}
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
+                />
+              </svg>
+              {formatBytes(contentSize)}
+              {isOverLimit && " (over limit!)"}
+            </div>
+          </div>
           <div className="flex gap-3">
             <button
               onClick={onClose}
@@ -273,7 +320,12 @@ export default function MarkdownCardEditor({
             </button>
             <button
               onClick={handleSave}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors"
+              disabled={isOverLimit}
+              className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${
+                isOverLimit
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-blue-500 hover:bg-blue-600"
+              }`}
             >
               Save Card
             </button>

@@ -18,16 +18,31 @@ export interface StorageBreakdown {
   totalFormatted: string;
   /** Breakdown by category */
   breakdown: {
-    /** Current scene data (elements only, without embedded files) */
-    sceneData: number;
+    /** Standard Excalidraw elements (shapes, text, arrows, etc.) */
+    standardElements: number;
     /** Embedded files (images as base64) */
     embeddedFiles: number;
+    /** Markdown card content (markdown text in customData) */
+    markdownCards: number;
+    /** Rich text card content (Tiptap JSON in customData) */
+    richTextCards: number;
+    /** Hidden search text elements for card searchability */
+    searchTextElements: number;
     /** App state */
     appState: number;
     /** Thumbnail preview */
     thumbnail: number;
     /** Version history (all versions combined) */
     versionHistory: number;
+  };
+  /** Element counts by type */
+  elementCounts: {
+    total: number;
+    standard: number;
+    images: number;
+    markdownCards: number;
+    richTextCards: number;
+    searchText: number;
   };
   /** Number of versions stored */
   versionCount: number;
@@ -100,15 +115,39 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
     });
 
     // Calculate storage breakdown
-    let sceneDataSize = 0;
     let appStateSize = 0;
     let versionHistorySize = 0;
     let embeddedFilesSize = 0;
+    let markdownCardsSize = 0;
+    let richTextCardsSize = 0;
+    let searchTextElementsSize = 0;
+    let standardElementsSize = 0;
+
+    // Element counts
+    let totalElements = 0;
+    let standardCount = 0;
+    let imagesCount = 0;
+    let markdownCardsCount = 0;
+    let richTextCardsCount = 0;
+    let searchTextCount = 0;
 
     // Current version (first one, most recent)
     if (versions.length > 0) {
       const currentScene = versions[0].sceneJson as {
-        elements?: unknown;
+        elements?: Array<{
+          type: string;
+          fileId?: string;
+          customData?: {
+            isMarkdownCard?: boolean;
+            isRichTextCard?: boolean;
+            isMarkdownSearchText?: boolean;
+            isRichTextSearchText?: boolean;
+            markdown?: string;
+            richTextContent?: string;
+          };
+          link?: string;
+          id?: string;
+        }>;
         files?: Record<string, unknown>;
       } | null;
 
@@ -117,8 +156,53 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
         embeddedFilesSize = getJsonSize(currentScene.files);
       }
 
-      // Scene data is the full JSON including files
-      sceneDataSize = getJsonSize(versions[0].sceneJson);
+      // Analyze elements by type
+      if (currentScene?.elements) {
+        totalElements = currentScene.elements.length;
+
+        for (const element of currentScene.elements) {
+          const elementSize = getJsonSize(element);
+
+          // Check if this is a markdown card
+          const isMarkdownCard =
+            element.customData?.isMarkdownCard ||
+            element.link?.startsWith("markdown://");
+
+          // Check if this is a rich text card
+          const isRichTextCard =
+            element.customData?.isRichTextCard ||
+            element.link?.startsWith("richtext://");
+
+          // Check if this is a search text element
+          const isSearchText =
+            element.customData?.isMarkdownSearchText ||
+            element.customData?.isRichTextSearchText ||
+            element.id?.startsWith("rtsearch-") ||
+            element.id?.startsWith("mdsearch-");
+
+          // Check if this is an image
+          const isImage = element.type === "image" && element.fileId;
+
+          if (isMarkdownCard) {
+            markdownCardsSize += elementSize;
+            markdownCardsCount++;
+          } else if (isRichTextCard) {
+            richTextCardsSize += elementSize;
+            richTextCardsCount++;
+          } else if (isSearchText) {
+            searchTextElementsSize += elementSize;
+            searchTextCount++;
+          } else if (isImage) {
+            // Image element metadata (not the file data itself)
+            standardElementsSize += elementSize;
+            imagesCount++;
+          } else {
+            standardElementsSize += elementSize;
+            standardCount++;
+          }
+        }
+      }
+
       appStateSize = getJsonSize(versions[0].appStateJson);
     }
 
@@ -130,18 +214,36 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
 
     const thumbnailSize = getStringSize(board.thumbnail);
 
-    // Total is current scene + thumbnail
-    const totalBytes = sceneDataSize + appStateSize + thumbnailSize;
+    // Total current board size (elements + files + app state + thumbnail)
+    const totalBytes =
+      standardElementsSize +
+      embeddedFilesSize +
+      markdownCardsSize +
+      richTextCardsSize +
+      searchTextElementsSize +
+      appStateSize +
+      thumbnailSize;
 
     const response: StorageBreakdown = {
       totalBytes,
       totalFormatted: formatBytes(totalBytes),
       breakdown: {
-        sceneData: sceneDataSize - embeddedFilesSize, // Elements only
-        embeddedFiles: embeddedFilesSize, // Images/files
+        standardElements: standardElementsSize,
+        embeddedFiles: embeddedFilesSize,
+        markdownCards: markdownCardsSize,
+        richTextCards: richTextCardsSize,
+        searchTextElements: searchTextElementsSize,
         appState: appStateSize,
         thumbnail: thumbnailSize,
         versionHistory: versionHistorySize,
+      },
+      elementCounts: {
+        total: totalElements,
+        standard: standardCount,
+        images: imagesCount,
+        markdownCards: markdownCardsCount,
+        richTextCards: richTextCardsCount,
+        searchText: searchTextCount,
       },
       versionCount: versions.length,
     };
