@@ -89,6 +89,8 @@ A self-hosted whiteboard application built with [Excalidraw](https://excalidraw.
 - 🔔 **Toast Notifications** — Non-blocking feedback for all actions
 - ✨ **Confirmation Modals** — Safe destructive action handling
 - 🌓 **Dark/Light Mode** — System preference detection
+- ⚙️ **Settings Dropdown** — Accessible settings menu with keyboard support
+- 📊 **Statistics Dashboard** — System-wide storage and usage analytics
 
 #### Deployment
 
@@ -288,8 +290,10 @@ pnpm docker:logs      # Follow app logs
 │   │   │   ├── boards/     # CRUD, save, versions, storage, cleanup
 │   │   │   ├── orgs/       # Organizations, members, storage
 │   │   │   ├── audit/      # Audit log queries (admin only)
-│   │   │   └── health.ts   # Health check endpoint
+│   │   │   ├── health.ts   # Health check endpoint
+│   │   │   └── stats.ts    # System statistics API
 │   │   ├── boards/[id].tsx # Board editor page
+│   │   ├── settings.tsx    # Statistics dashboard page
 │   │   └── index.tsx       # Dashboard (board list + auth)
 │   ├── server/
 │   │   ├── db/             # prisma.ts (singleton client)
@@ -342,6 +346,44 @@ graph TD
 ````
 
 Supports flowcharts, sequence diagrams, class diagrams, and more. See [Mermaid docs](https://mermaid.js.org/intro/).
+
+---
+
+## Statistics Dashboard
+
+Access comprehensive system statistics via the **Settings** dropdown (gear icon) in the header.
+
+### Overview Metrics
+
+| Metric          | Description                      |
+| --------------- | -------------------------------- |
+| Total Storage   | Combined size of all board data  |
+| Total Boards    | Active and archived board count  |
+| Version History | Total versions across all boards |
+| Users           | Registered user count            |
+
+### Board Content Analysis
+
+| Metric          | Description                                    |
+| --------------- | ---------------------------------------------- |
+| Total Elements  | All Excalidraw elements (from latest versions) |
+| Images          | Embedded images with file IDs                  |
+| Markdown Cards  | Documentation cards with Mermaid support       |
+| Rich Text Cards | Notion-style WYSIWYG cards (Tiptap)            |
+
+### Storage Breakdown
+
+- **Scene Data** — Excalidraw scene JSON (elements, styles)
+- **App State** — Editor state (zoom, scroll position, selections)
+- **Thumbnails** — Board preview images (base64)
+- **Version History** — Total size across all versions
+
+### Database Tables
+
+Row counts and estimated storage for all 11 database tables:
+Users, Organizations, Memberships, Boards, BoardVersions, BoardPermissions, BoardAssets, AuditEvents, ShareLinks, Accounts, Sessions.
+
+> 💡 **Note:** Element counts only include the **latest version** of each board to show current state, not historical data.
 
 ---
 
@@ -420,6 +462,12 @@ Supports flowcharts, sequence diagrams, class diagrams, and more. See [Mermaid d
 | Method | Endpoint      | Description              |
 | ------ | ------------- | ------------------------ |
 | GET    | `/api/health` | Health status + DB check |
+
+### Statistics
+
+| Method | Endpoint     | Description                       |
+| ------ | ------------ | --------------------------------- |
+| GET    | `/api/stats` | System-wide storage & usage stats |
 
 ### Authentication
 
