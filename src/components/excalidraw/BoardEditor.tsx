@@ -262,6 +262,10 @@ export function BoardEditor({
   const searchTextMigrationDoneRef = useRef(false);
   const lastZoomRef = useRef<number>(1);
   const zoomCorrectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Debounce timer for card operations to prevent save storms
+  const cardSaveDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  // Track if user was editing text (to trigger save when they finish)
+  const wasEditingTextRef = useRef(false);
 
   /**
    * Limits zoom level during search navigation to prevent extreme zoom.
@@ -737,8 +741,32 @@ export function BoardEditor({
       if (currentHash !== lastSavedHashRef.current) {
         hasUnsavedChangesRef.current = true;
       }
+
+      // Detect when user finishes editing text and trigger debounced save
+      // editingElement is set while user is actively editing text, null when done
+      const isCurrentlyEditing = appState.editingElement !== null;
+
+      if (
+        wasEditingTextRef.current &&
+        !isCurrentlyEditing &&
+        hasUnsavedChangesRef.current
+      ) {
+        // User just finished editing - trigger debounced save
+        if (cardSaveDebounceRef.current) {
+          clearTimeout(cardSaveDebounceRef.current);
+        }
+        cardSaveDebounceRef.current = setTimeout(() => {
+          if (!excalidrawRef.current) return;
+          const latestElements = excalidrawRef.current.getSceneElements();
+          const latestAppState = excalidrawRef.current.getAppState();
+          const latestFiles = excalidrawRef.current.getFiles();
+          saveToServer(latestElements, latestAppState, latestFiles);
+        }, 300);
+      }
+
+      wasEditingTextRef.current = isCurrentlyEditing;
     },
-    [board, limitSearchZoom]
+    [board, limitSearchZoom, saveToServer]
   );
 
   // Manual save
@@ -863,10 +891,16 @@ export function BoardEditor({
 
       excalidrawRef.current.updateScene({ elements: updatedElements });
       hasUnsavedChangesRef.current = true;
+
+      // Trigger immediate save to persist card content changes
+      const appState = excalidrawRef.current.getAppState();
+      const files = excalidrawRef.current.getFiles();
+      saveToServer(updatedElements as ExcalidrawElements, appState, files);
+
       setEditingMarkdownElementId(null);
       setEditingMarkdownContent("");
     },
-    [editingMarkdownElementId]
+    [editingMarkdownElementId, saveToServer]
   );
 
   // Handle editing a rich text card (triggered by double-click)
@@ -958,10 +992,16 @@ export function BoardEditor({
 
       excalidrawRef.current.updateScene({ elements: updatedElements });
       hasUnsavedChangesRef.current = true;
+
+      // Trigger immediate save to persist card content changes
+      const appState = excalidrawRef.current.getAppState();
+      const files = excalidrawRef.current.getFiles();
+      saveToServer(updatedElements as ExcalidrawElements, appState, files);
+
       setEditingRichTextElementId(null);
       setEditingRichTextContent("");
     },
-    [editingRichTextElementId, extractTextFromTiptapJson]
+    [editingRichTextElementId, extractTextFromTiptapJson, saveToServer]
   );
 
   /**
@@ -1082,12 +1122,30 @@ export function BoardEditor({
     };
 
     const currentElements = excalidrawRef.current.getSceneElements();
+    const newElements = [
+      ...currentElements,
+      markdownElement,
+      searchTextElement,
+    ];
     excalidrawRef.current.updateScene({
-      elements: [...currentElements, markdownElement, searchTextElement],
+      elements: newElements,
     });
 
     hasUnsavedChangesRef.current = true;
-  }, []);
+
+    // Debounced save to prevent save storms when rapidly inserting cards
+    // Uses 300ms debounce - fast enough to feel instant, slow enough to batch
+    if (cardSaveDebounceRef.current) {
+      clearTimeout(cardSaveDebounceRef.current);
+    }
+    cardSaveDebounceRef.current = setTimeout(() => {
+      if (!excalidrawRef.current) return;
+      const latestElements = excalidrawRef.current.getSceneElements();
+      const latestAppState = excalidrawRef.current.getAppState();
+      const latestFiles = excalidrawRef.current.getFiles();
+      saveToServer(latestElements, latestAppState, latestFiles);
+    }, 300);
+  }, [saveToServer]);
 
   /**
    * Inserts a new rich text card with Notion-style editing at the center of the viewport.
@@ -1225,12 +1283,30 @@ export function BoardEditor({
     };
 
     const currentElements = excalidrawRef.current.getSceneElements();
+    const newElements = [
+      ...currentElements,
+      richTextElement,
+      searchTextElement,
+    ];
     excalidrawRef.current.updateScene({
-      elements: [...currentElements, richTextElement, searchTextElement],
+      elements: newElements,
     });
 
     hasUnsavedChangesRef.current = true;
-  }, []);
+
+    // Debounced save to prevent save storms when rapidly inserting cards
+    // Uses 300ms debounce - fast enough to feel instant, slow enough to batch
+    if (cardSaveDebounceRef.current) {
+      clearTimeout(cardSaveDebounceRef.current);
+    }
+    cardSaveDebounceRef.current = setTimeout(() => {
+      if (!excalidrawRef.current) return;
+      const latestElements = excalidrawRef.current.getSceneElements();
+      const latestAppState = excalidrawRef.current.getAppState();
+      const latestFiles = excalidrawRef.current.getFiles();
+      saveToServer(latestElements, latestAppState, latestFiles);
+    }, 300);
+  }, [saveToServer]);
 
   // Validate embeddable URLs - accept markdown:// and richtext:// schemes
   const validateEmbeddable = useCallback((url: string) => {
@@ -1287,7 +1363,16 @@ export function BoardEditor({
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      // Cleanup debounce timer on unmount
+      if (cardSaveDebounceRef.current) {
+        clearTimeout(cardSaveDebounceRef.current);
+      }
+      if (zoomCorrectionTimeoutRef.current) {
+        clearTimeout(zoomCorrectionTimeoutRef.current);
+      }
+    };
   }, []);
 
   if (loadError) {

@@ -141,6 +141,10 @@ model Board {
   isArchived  Boolean  @default(false)
   thumbnail   String?  @db.Text // Base64 data URL for preview image
 
+  // Searchable content - aggregated text from all elements for full-text search
+  // This includes: text elements, markdown cards, rich text cards
+  searchContent String? @db.Text
+
   // Version tracking
   currentVersionId String?
   versionNumber    Int     @default(0)

@@ -35,6 +35,147 @@ export interface SaveVersionInput {
   thumbnail?: string; // Base64 data URL for preview
 }
 
+// Type for Tiptap JSON content node
+interface TiptapNode {
+  type?: string;
+  text?: string;
+  content?: TiptapNode[];
+}
+
+// Type for Excalidraw element with customData
+interface SceneElement {
+  id: string;
+  type: string;
+  text?: string;
+  isDeleted?: boolean;
+  customData?: {
+    markdown?: string;
+    richTextContent?: string;
+    isMarkdownCard?: boolean;
+    isRichTextCard?: boolean;
+    isMarkdownSearchText?: boolean;
+    isRichTextSearchText?: boolean;
+  };
+  fileId?: string;
+}
+
+/**
+ * Extract searchable plain text from all elements in a scene.
+ * This includes:
+ * - Text elements (direct text content)
+ * - Markdown cards (stripped markdown -> plain text)
+ * - Rich text cards (extracted text from Tiptap JSON)
+ *
+ * Search text elements are excluded to avoid duplication.
+ */
+function extractSearchableContent(sceneJson: unknown): string {
+  const scene = sceneJson as { elements?: SceneElement[] } | null;
+  if (!scene?.elements) return "";
+
+  const textParts: string[] = [];
+
+  for (const element of scene.elements) {
+    // Skip deleted elements
+    if (element.isDeleted) continue;
+
+    // Skip search text elements (they duplicate card content)
+    if (
+      element.customData?.isMarkdownSearchText ||
+      element.customData?.isRichTextSearchText
+    ) {
+      continue;
+    }
+
+    // Regular text elements
+    if (element.type === "text" && element.text) {
+      textParts.push(element.text);
+    }
+
+    // Markdown cards
+    if (element.customData?.isMarkdownCard && element.customData?.markdown) {
+      const plainText = stripMarkdownToPlainText(element.customData.markdown);
+      if (plainText) textParts.push(plainText);
+    }
+
+    // Rich text cards
+    if (
+      element.customData?.isRichTextCard &&
+      element.customData?.richTextContent
+    ) {
+      try {
+        const content = JSON.parse(element.customData.richTextContent);
+        const plainText = extractTextFromTiptapJson(content);
+        if (plainText) textParts.push(plainText);
+      } catch {
+        // Ignore parse errors
+      }
+    }
+  }
+
+  // Join all text with spaces and normalize whitespace
+  const fullText = textParts.join(" ").replace(/\s+/g, " ").trim();
+
+  // Limit to 50KB to prevent huge indexes and maintain query performance
+  // For boards exceeding this limit, consider a dedicated search service
+  const MAX_SEARCH_CONTENT_LENGTH = 50000;
+  if (fullText.length > MAX_SEARCH_CONTENT_LENGTH) {
+    console.warn(
+      `[boards.service] searchContent truncated from ${fullText.length} to ${MAX_SEARCH_CONTENT_LENGTH} chars`
+    );
+    return fullText.slice(0, MAX_SEARCH_CONTENT_LENGTH);
+  }
+
+  return fullText;
+}
+
+/**
+ * Strip markdown formatting to get plain text for search indexing.
+ * Removes common markdown syntax while preserving readable text.
+ */
+function stripMarkdownToPlainText(markdown: string): string {
+  return (
+    markdown
+      // Remove code blocks (```...```)
+      .replace(/```[\s\S]*?```/g, "")
+      // Remove inline code (`...`)
+      .replace(/`[^`]+`/g, "")
+      // Remove headers (# ## ### etc) but keep the text
+      .replace(/^#{1,6}\s+/gm, "")
+      // Remove bold/italic markers
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/__([^_]+)__/g, "$1")
+      .replace(/_([^_]+)_/g, "$1")
+      // Remove links but keep text [text](url) -> text
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      // Remove images ![alt](url)
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+      // Remove horizontal rules
+      .replace(/^[-*_]{3,}\s*$/gm, "")
+      // Remove list markers
+      .replace(/^[\s]*[-*+]\s+/gm, "")
+      .replace(/^[\s]*\d+\.\s+/gm, "")
+      // Remove blockquotes
+      .replace(/^>\s+/gm, "")
+      // Clean up extra whitespace
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
+}
+
+/**
+ * Extract plain text from Tiptap JSON content recursively.
+ */
+function extractTextFromTiptapJson(node: TiptapNode): string {
+  if (node.text) return node.text;
+  if (node.content) {
+    return node.content
+      .map((child) => extractTextFromTiptapJson(child))
+      .join(" ");
+  }
+  return "";
+}
+
 /**
  * Create a new board with initial version
  */
@@ -44,6 +185,9 @@ export async function createBoard(
 ) {
   const { orgId, ownerId, title, description, tags, sceneJson, appStateJson } =
     input;
+
+  // Extract searchable content from scene
+  const searchContent = extractSearchableContent(sceneJson);
 
   const board = await prisma.$transaction(async (tx) => {
     // Create the board
@@ -55,6 +199,7 @@ export async function createBoard(
         description,
         tags: tags || [],
         versionNumber: 1,
+        searchContent,
       },
     });
 
@@ -189,6 +334,9 @@ export async function saveVersion(
   // Clean up orphaned files before saving
   const cleanedSceneJson = cleanOrphanedFiles(sceneJson);
 
+  // Extract searchable content from scene for full-text search
+  const searchContent = extractSearchableContent(cleanedSceneJson);
+
   const result = await prisma.$transaction(async (tx) => {
     // Get current board state
     const board = await tx.board.findUnique({
@@ -222,13 +370,14 @@ export async function saveVersion(
       },
     });
 
-    // Update board with new version and thumbnail
+    // Update board with new version, thumbnail, and search content
     await tx.board.update({
       where: { id: boardId },
       data: {
         versionNumber: newVersion,
         currentVersionId: version.id,
         etag: newEtag,
+        searchContent,
         ...(thumbnail && { thumbnail }),
       },
     });
@@ -454,7 +603,8 @@ export async function deleteBoard(
 }
 
 /**
- * Search boards within an organization
+ * Search boards within an organization.
+ * Searches across title, description, and content (text elements, markdown cards, rich text cards).
  */
 export async function searchBoards(
   orgId: string,
@@ -475,6 +625,7 @@ export async function searchBoards(
       OR: [
         { title: { contains: query, mode: "insensitive" as const } },
         { description: { contains: query, mode: "insensitive" as const } },
+        { searchContent: { contains: query, mode: "insensitive" as const } },
       ],
     }),
     ...(tags &&
