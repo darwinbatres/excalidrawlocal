@@ -78,9 +78,22 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # Copy the full node_modules from builder (which has prisma generate run already)
 COPY --from=builder /app/node_modules ./node_modules
 
-# Create startup script using node to run prisma directly
+# Create startup script that constructs DATABASE_URL at runtime from
+# POSTGRES_* variables, ensuring it is always correct regardless of
+# what the .env file contains (avoids unresolved ${VAR} issues on Linux).
 RUN echo '#!/bin/sh' > /app/start.sh && \
     echo 'set -e' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Build DATABASE_URL from individual POSTGRES_* env vars at runtime' >> /app/start.sh && \
+    echo '# This overrides any malformed DATABASE_URL from .env' >> /app/start.sh && \
+    echo 'DB_USER="${POSTGRES_USER:-excalidraw}"' >> /app/start.sh && \
+    echo 'DB_PASS="${POSTGRES_PASSWORD:-excalidraw_secret_change_me}"' >> /app/start.sh && \
+    echo 'DB_NAME="${POSTGRES_DB:-excalidraw}"' >> /app/start.sh && \
+    echo 'DB_HOST="${POSTGRES_HOST:-postgres}"' >> /app/start.sh && \
+    echo 'DB_PORT="${POSTGRES_PORT:-5432}"' >> /app/start.sh && \
+    echo 'export DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}?schema=public"' >> /app/start.sh && \
+    echo 'echo "Database: ${DB_NAME} @ ${DB_HOST}:${DB_PORT} (user: ${DB_USER})"' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
     echo 'echo "Running database migrations..."' >> /app/start.sh && \
     echo './node_modules/.bin/prisma migrate deploy' >> /app/start.sh && \
     echo 'echo "Seeding database..."' >> /app/start.sh && \
