@@ -12,6 +12,11 @@
 #   2. Copy the tunnel token
 #   3. Set CLOUDFLARE_TUNNEL_TOKEN in .env
 #   4. docker compose --profile tunnel up -d --build
+#
+# Troubleshooting (P1000 auth errors):
+#   1. Remove DATABASE_URL from .env (docker-compose.yml builds it automatically)
+#   2. If you changed POSTGRES_* credentials after first run, reset the volume:
+#      docker compose down -v && docker compose up -d --build
 # =============================================================================
 
 services:
@@ -60,7 +65,9 @@ services:
     env_file:
       - .env
     environment:
-      # Override for Docker networking (internal hostnames)
+      # Construct DATABASE_URL from POSTGRES_* variables for Docker networking.
+      # This overrides any DATABASE_URL from .env — do NOT set DATABASE_URL in .env
+      # when using Docker, as ${VAR} references in env_file are not interpolated.
       - DATABASE_URL=postgresql://${POSTGRES_USER:-excalidraw}:${POSTGRES_PASSWORD:-excalidraw_secret_change_me}@postgres:5432/${POSTGRES_DB:-excalidraw}?schema=public
     ports:
       - "3021:3021"
